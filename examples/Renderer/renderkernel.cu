@@ -74,7 +74,7 @@ __constant__ Sphere spheres[] = {
 	//{ 0.5, { 30.0f, 180.5, 42 }, { 0, 0, 0 }, { .6f, .6f, 0.6f }, DIFF },  // small sphere 1  
 	//{ 0.8, { 2.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, SPEC },  // small sphere 2
 	//{ 0.8, { -3.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.0f, 0.0f, 0.2f }, COAT },  // small sphere 2
-	{ 0.1, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
+	{ 0.008, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
 	//{ 0.6, { -10.0f, -2.f, 1.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, DIFF },  // small sphere 2
 	//{ 0.8, { -1.0f, -0.7f, 4.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, REFR },  // small sphere 2
 	//{ 9.4, { 9.0f, 0.f, -9.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.f }, DIFF },  // small sphere 2
@@ -427,7 +427,7 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 
 __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
 	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices, 
-	int& hitTriIdx, float& hitdistance, int& debugbingo, Vec3f& trinormal, int leafcount, int tricount, bool anyHit)
+	int& hitTriIdx, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, int leafcount, int tricount, bool anyHit)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	// global threadId, see richiesams blogspot
@@ -677,8 +677,7 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 						hitIndex = triAddr;
 						hitT = t;  /// keeps track of closest hitpoint
 
-						//trinormal = cross(v0 - v1, v0 - v2);
-
+						ng = cross(v0 - v1, v0 - v2);
                         trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
 						trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
 						trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
@@ -746,6 +745,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		Vec3f nl; // oriented normal
 		Vec3f nextdir; // ray direction of next path segment
 		Vec3f trinormal = Vec3f(0, 0, 0);
+		Vec3f ng = Vec3f(0, 0, 0);
 		Refl_t refltype;
 		float ray_tmin = 0.00001f; // set to 0.01f when using refractive material
 		float ray_tmax = 1e20;
@@ -758,7 +758,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		//	gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
 
 		intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
-		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
+		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, ng, leafcount, tricount, false);
 
 
 		// intersect all spheres in the scene
@@ -848,9 +848,9 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 			// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
 			n = trinormal;
 			n.normalize();
-			nl = dot(n, raydir) < 0 ? n : n * -1;  // correctly oriented normal
+			nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
 			//Vec3f colour = hitTriIdx->_colorf;
-			Vec3f colour = Vec3f(1.0f, 1.0f, 1.0f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
+			Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
 			refltype = DIFF; // objectmaterial
 			objcol = colour;
 			emit = Vec3f(0.0, 0.0, 0);  // object emission
@@ -1141,13 +1141,13 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 	Vec3f colour = Vec3f(clamp(tempcol.x, 0.0f, 1.0f), clamp(tempcol.y, 0.0f, 1.0f), clamp(tempcol.z, 0.0f, 1.0f));
 	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	//fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
 
-		fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-										(unsigned char)(colour.y* 255), 
-										(unsigned char)(colour.z* 255), 1);
+		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
+		//								(unsigned char)(colour.y* 255), 
+		//								(unsigned char)(colour.z* 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);

@@ -16,6 +16,7 @@
 #include "linear_math.h"
 #include "Geometry.h"
 #include "SceneLoader.h"
+#include "Material.h"
 
 
 using std::string;
@@ -26,8 +27,8 @@ unsigned trianglesNo = 0;
 Vertex* vertices = NULL;   // vertex list
 Vec3f* normals = NULL;
 Triangle* triangles = NULL;  // triangle list
-
- 
+std::vector<Material> materials;
+std::vector<std::string> materialNames;
 struct face {                  
 	std::vector<int> vertex;
 	std::vector<int> texture;
@@ -69,6 +70,7 @@ struct TriangleMesh
     std::vector<Vec3f> nors;
 	std::vector<Vec3i> faceVertIndexs;
     std::vector<Vec3i> faceNorIndexs;
+	std::vector<int> materialIndexs;
 	Vec3f bounding_box[2];   // mesh bounding box
 };
 
@@ -110,12 +112,12 @@ void load_object(const char *filename)
 
 			if (!ifs.good())
 			{
-			std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
-			system("PAUSE");
-			exit(0);
+				std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
+				system("PAUSE");
+				exit(0);
 			}
 
-
+			int materialIndex = 0;
 			std::string line, key;
 			while (!ifs.eof() && std::getline(ifs, line)) {
 			    key = "";
@@ -161,7 +163,6 @@ void load_object(const char *filename)
 				    //tempnormal.normalize();
 				    //normals.push_back(tempnormals);
 			    }
-
 			    else if (key == "f") { // face
 				    face f;
 				    int v, t, n;
@@ -192,6 +193,7 @@ void load_object(const char *filename)
 			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
 			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
                     mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
+					mesh.materialIndexs.push_back(materialIndex);
 			    }
 
 			    //while (stream >> v_extra) {
@@ -199,7 +201,15 @@ void load_object(const char *filename)
 			    //	v3 = v_extra;
 			    //	mesh.faces.push_back(Vec3i(v1, v2, v3));
 			    //}
-			    }
+			    }else if(key == "usemtl"){
+					std::string materialName;
+					stringstream >> materialName >> std::ws;
+					for(int i = 0; i < materialNames.size(); i++){
+						if(materialName == materialNames[i]){
+							materialIndex = i + 1;
+						}
+					}
+				}
 			    else {
 			    }
 					
@@ -230,9 +240,6 @@ void load_object(const char *filename)
 				pCurrentVertex->x = currentvert.x;
 				pCurrentVertex->y = currentvert.y;
 				pCurrentVertex->z = currentvert.z;
-				//pCurrentVertex->_normal.x = 0.f; // not used for now, normals are computed on-the-fly by GPU
-				//pCurrentVertex->_normal.y = 0.f; // not used 
-				//pCurrentVertex->_normal.z = 0.f; // not used 
 
 				pCurrentVertex++;
 			}
@@ -257,6 +264,8 @@ void load_object(const char *filename)
 				
 				Vec3i currentfaceinds = mesh.faceVertIndexs[totalTriangles];
                 Vec3i currentnorminds = mesh.faceNorIndexs[totalTriangles];
+
+				pCurrentTriangle->m_idx = mesh.materialIndexs[totalTriangles];
 
 				pCurrentTriangle->v_idx1 = currentfaceinds.x - 1;
 				pCurrentTriangle->v_idx2 = currentfaceinds.y - 1;

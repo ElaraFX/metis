@@ -258,6 +258,7 @@ void TriangleWindow::createBVH(){
         Scene::Triangle newtri;
         newtri.verticeIndex = Vec3i(triangles[i].v_idx1, triangles[i].v_idx2, triangles[i].v_idx3);
         newtri.normalIndex = Vec3i(triangles[i].n_idx1, triangles[i].n_idx2, triangles[i].n_idx3);
+		newtri.materialIndex = triangles[i].m_idx;
         tris.add(newtri);
     }
 
