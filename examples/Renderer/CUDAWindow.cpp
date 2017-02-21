@@ -55,6 +55,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     scalefactor = 1.2f;
     nocachedBVH = false;
 
+	mtlfile = "data/teapot1.mtl";
     scenefile = "data/teapot1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
@@ -239,7 +240,7 @@ void TriangleWindow::initCUDAscenedata()
 }
 
 void TriangleWindow::createBVH(){
-
+	load_material(mtlfile);
     load_object(scenefile);
     float maxi2 = processgeo();
 
