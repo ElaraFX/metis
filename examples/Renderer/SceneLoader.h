@@ -12,6 +12,7 @@ extern Triangle* triangles;
 
 void panic(const char *fmt, ...);
 void load_object(const char *filename);
+void load_material(const char* strFileName);
 float processgeo();
 
 #endif

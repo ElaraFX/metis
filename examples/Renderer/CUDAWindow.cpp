@@ -55,7 +55,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     scalefactor = 1.2f;
     nocachedBVH = false;
 
-    scenefile = "data/teapot1.obj"; 
+	mtlfile = "data/sibenik.mtl";
+    scenefile = "data/sibenik.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -96,7 +97,7 @@ void TriangleWindow::initializeGL()
     if (!BVHcachefile){ nocachedBVH = true; }
 
     //if (true){ // overrule cache
-    if (nocachedBVH){
+    if (1){
         std::cout << "No cached BVH file available\nCreating new BVH...\n";
         // initialise all data needed to start rendering (BVH data, triangles, vertices)
         createBVH();
@@ -239,7 +240,7 @@ void TriangleWindow::initCUDAscenedata()
 }
 
 void TriangleWindow::createBVH(){
-
+	load_material(mtlfile);
     load_object(scenefile);
     float maxi2 = processgeo();
 

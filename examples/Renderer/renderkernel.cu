@@ -850,7 +850,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 			n.normalize();
 			nl = dot(n, raydir) < 0 ? n : n * -1;  // correctly oriented normal
 			//Vec3f colour = hitTriIdx->_colorf;
-			Vec3f colour = Vec3f(1.0f, 1.0f, 1.0f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
+			Vec3f colour = Vec3f(.9f, 0.3f, 0.0f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
 			refltype = DIFF; // objectmaterial
 			objcol = colour;
 			emit = Vec3f(0.0, 0.0, 0);  // object emission
@@ -1141,13 +1141,9 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 	Vec3f colour = Vec3f(clamp(tempcol.x, 0.0f, 1.0f), clamp(tempcol.y, 0.0f, 1.0f), clamp(tempcol.z, 0.0f, 1.0f));
 	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	//fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
-
-		fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-										(unsigned char)(colour.y* 255), 
-										(unsigned char)(colour.z* 255), 1);
+	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);

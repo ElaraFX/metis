@@ -16,6 +16,7 @@
 #include "linear_math.h"
 #include "Geometry.h"
 #include "SceneLoader.h"
+#include "MMaterial.h"
 
 
 using std::string;
@@ -115,7 +116,8 @@ void load_object(const char *filename)
 			exit(0);
 			}
 
-
+			MATERIALCONTAINER *curMaterialSet = NULL;
+			MMaterial *curMaterial = NULL; 
 			std::string line, key;
 			while (!ifs.eof() && std::getline(ifs, line)) {
 			    key = "";
@@ -125,7 +127,44 @@ void load_object(const char *filename)
 			    // if (sscanf(buffer, "v %f %f %f", &f1, &f2, &f3) == 3){
 			    // mesh.verts.push_back(Vec3f(f1, f2, f3));
 
-			    if (key == "v") { // vertex	
+				if (key == "mtllib")
+				{
+					std::string filename;
+					if (!stringstream.eof()) {
+						stringstream >> filename >> std::ws;
+						curMaterialSet = &g_MaterialContainer;
+					}
+				}
+				else if (key == "usemtl")
+				{
+					// Material
+					std::string materialname;
+					if (!stringstream.eof()) {
+						stringstream >> materialname >> std::ws;
+						bool bFound = false;
+						if (curMaterialSet != NULL)
+						{
+							for(int iMaterial = 0; iMaterial < curMaterialSet->arrayMaterial.size(); iMaterial++)
+							{
+								if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname.c_str()) == 0)
+								{
+									bFound = true;
+									curMaterial = curMaterialSet->arrayMaterial[iMaterial];
+									break;
+								}
+							}
+						}
+						
+						// 若没找到材质为空
+						if(!bFound)
+						{
+							curMaterial = NULL;
+							char szName[128] = " ";
+							printf(szName, "Error：Material %s cannot be found！", materialname.c_str());
+						}
+					}
+				}
+			    else if (key == "v") { // vertex	
 				    float x, y, z;
 				    while (!stringstream.eof()) {
 					    stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
@@ -290,6 +329,110 @@ void load_object(const char *filename)
     std::cout << "Normals:  " << normalsNo << std::endl;
 	std::cout << "Triangles: " << trianglesNo << std::endl;
 
+}
+
+void load_material(const char* strFileName)
+{
+	int index = 0;
+    char strTexPath[MAX_PATH];
+    char strCommand[256] = {0};
+    std::ifstream InFile(strFileName);
+    if(!InFile)
+        std::cout<<"Cannot open file: "<<strFileName<<std::endl;
+
+    MMaterial* pMaterial = NULL;
+	MATERIALCONTAINER *pMCon = &g_MaterialContainer;
+	strcpy(pMCon->szPathName, strFileName);
+    while (!InFile.eof())
+	{
+		InFile>>strCommand;
+		if (!InFile) 
+			break;
+        if(0 == strcmp(strCommand, "newmtl"))
+        {
+            char strName[MAX_PATH] = {0};
+            InFile>>strName;
+            pMaterial = new MMaterial();
+			strcpy(pMaterial->m_szNameMtl, strName);
+			pMaterial->m_index = index;
+			pMCon->AddMaterial(pMaterial);
+			index++;
+        }
+        if(pMaterial == NULL)
+            continue;
+
+        if(0 == strcmp(strCommand, "#"))
+        {
+            // 跳过注释
+        }
+        else if(0 == strcmp(strCommand, "Ka"))
+        {
+            // 环境光
+        }
+        else if(0 == strcmp(strCommand, "Kd"))
+        {
+            // 漫反射系数
+            float r, g, b, average;
+            InFile>>r>>g>>b;
+            pMaterial->m_ColorReflect.x = r;
+            pMaterial->m_ColorReflect.y = g;
+            pMaterial->m_ColorReflect.z = b;
+        }
+		else if(0 == strcmp(strCommand, "Ni"))
+        {
+			// 折射率
+			float Ni;
+			InFile>>Ni;
+			pMaterial->m_ior = Ni;
+		}
+        else if(0 == strcmp(strCommand, "Ks"))
+        {
+            // 镜面反射系数
+            float r, g, b, average;
+            InFile>>r>>g>>b;
+			pMaterial->m_SpecColorReflect.x = r;
+            pMaterial->m_SpecColorReflect.y = g;
+            pMaterial->m_SpecColorReflect.z = b;
+        }
+		else if(0 == strcmp(strCommand, "Ke"))
+        {
+			// 自发光
+		}
+        else if(0 == strcmp(strCommand, "d"))
+        {
+            // 透射值
+			float d;
+            InFile>>d;
+			pMaterial->m_transparencyRate = 1 - d;
+        }
+        else if(0 == strcmp(strCommand, "Tr"))
+		{
+            // 透射值
+			float Tr;
+            InFile>>Tr;
+			pMaterial->m_transparencyRate = Tr;
+		}
+        else if(0 == strcmp(strCommand, "Ns"))
+        {
+            // Shininess
+            int nShininess;
+            InFile>>nShininess;
+			pMaterial->m_glossiness = nShininess;
+        }
+        else if(0 == strcmp(strCommand, "illum"))
+        {
+            // 自发光暂时先不处理
+        }
+        else
+        {
+            // 忽略其他
+        }
+
+        InFile.ignore(1000, '\n');
+    }
+
+
+    InFile.close();
 }
 
 	/////////////////////////

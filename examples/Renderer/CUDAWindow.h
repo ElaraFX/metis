@@ -66,7 +66,8 @@ private:
     int triIndicesSize;
     float scalefactor;
     bool nocachedBVH;
-
+	
+    const char* mtlfile;
     const char* scenefile; 
     const char* HDRmapname;
 
