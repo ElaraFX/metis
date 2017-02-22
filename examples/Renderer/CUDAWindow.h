@@ -26,7 +26,7 @@ public:
     void initHDR();
 
 	void ProfilerBegin();
-	void ProfilerEnd(int numRays);
+	void ProfilerEnd(long long int numRays);
 
 protected:
     void initializeGL() Q_DECL_OVERRIDE;
