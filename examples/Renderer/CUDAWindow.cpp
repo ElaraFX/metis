@@ -97,8 +97,8 @@ void TriangleWindow::initializeGL()
     FILE* BVHcachefile = fopen(BVHcacheFilename.c_str(), "rb");
     if (!BVHcachefile){ nocachedBVH = true; }
 
-    if (true){ // overrule cache
-    //if (nocachedBVH){
+    //if (true){ // overrule cache
+	if (nocachedBVH){
         std::cout << "No cached BVH file available\nCreating new BVH...\n";
         // initialise all data needed to start rendering (BVH data, triangles, vertices)
         createBVH();
@@ -143,20 +143,24 @@ void TriangleWindow::loadBVHfromCache(FILE* BVHcachefile, const std::string BVHc
     if (1 != fread(&triWoopSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (1 != fread(&triDebugSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (1 != fread(&triIndicesSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
+	if (1 != fread(&materialNo, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
 
     std::cout << "Number of nodes: " << nodeSize << "\n";
     std::cout << "Number of triangles: " << triangle_count << "\n";
+	std::cout << "Number of Materials: " << materialNo << "\n";
     std::cout << "Number of BVH leafnodes: " << leafnode_count << "\n";
 
     cpuNodePtr = (Vec4i*)malloc(nodeSize * sizeof(Vec4i));
     cpuTriWoopPtr = (Vec4i*)malloc(triWoopSize * sizeof(Vec4i));
     cpuTriDebugPtr = (Vec4i*)malloc(triDebugSize * sizeof(Vec4i));
     cpuTriIndicesPtr = (S32*)malloc(triIndicesSize * sizeof(S32));
+	materials = (MaterialCUDA*)malloc(materialNo * sizeof(MaterialCUDA));
 
     if (nodeSize != fread(cpuNodePtr, sizeof(Vec4i), nodeSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triWoopSize != fread(cpuTriWoopPtr, sizeof(Vec4i), triWoopSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triDebugSize != fread(cpuTriDebugPtr, sizeof(Vec4i), triDebugSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triIndicesSize != fread(cpuTriIndicesPtr, sizeof(S32), triIndicesSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
+	if (materialNo != fread(materials, sizeof(MaterialCUDA), materialNo, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
 
     fclose(BVHcachefile);
     std::cout << "Successfully loaded BVH from cache file!\n";
@@ -172,10 +176,13 @@ void TriangleWindow::writeBVHcachefile(FILE* BVHcachefile, const std::string BVH
     if (1 != fwrite(&triWoopSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (1 != fwrite(&triDebugSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (1 != fwrite(&triIndicesSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+	if (1 != fwrite(&materialNo, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+
     if (nodeSize != fwrite(cpuNodePtr, sizeof(Vec4i), nodeSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triWoopSize != fwrite(cpuTriWoopPtr, sizeof(Vec4i), triWoopSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triDebugSize != fwrite(cpuTriDebugPtr, sizeof(Vec4i), triDebugSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triIndicesSize != fwrite(cpuTriIndicesPtr, sizeof(S32), triIndicesSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+	if (materialNo != fwrite(materials, sizeof(MaterialCUDA), materialNo, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
 
     fclose(BVHcachefile);
     std::cout << "Successfully created BVH cache file!\n";
