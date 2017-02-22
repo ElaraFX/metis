@@ -411,7 +411,7 @@ void TriangleWindow::paintGL()
 	if(framenumber % m_interval == 0){
 		const int depth = 4;
 		const int samp = 1;
-		int numRays = width() * height() * depth * samp;
+		int numRays = width() * height() * depth * samp * m_interval;
 		ProfilerEnd(numRays);
 	}
 	
