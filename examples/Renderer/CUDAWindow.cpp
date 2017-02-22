@@ -55,8 +55,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     scalefactor = 1.2f;
     nocachedBVH = false;
 
-	mtlfile = "data/sibenik.mtl";
-    scenefile = "data/sibenik.obj"; 
+	mtlfile = "";
+    scenefile = "data/teapot1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]

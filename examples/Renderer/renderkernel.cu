@@ -1133,14 +1133,36 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 
 	// add pixel colour to accumulation buffer (accumulates all samples) 
 	accumbuffer[i] += finalcol;
-	
-	// averaged colour: divide colour by the number of calculated frames so far
-	Vec3f tempcol = accumbuffer[i] / framenumber;
+}
 
-	Colour fcolour;
+__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, const Camera* cudaRenderCam, unsigned int framenumber) 
+{
+	// assign a CUDA thread to every pixel by using the threadIndex
+	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
+	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
+	int index;
+	for (int m = -1; m <= 1; m++)
+		for (int n = -1; n <= 1; n++)
+		{
+			int index_y = cudaRenderCam->resolution.y - y - n - 1;
+			int index_x = m + x;
+			if ((index_x < 0 || index_x >= cudaRenderCam->resolution.x || index_y < 0 || index_y >= cudaRenderCam->resolution.y))
+				continue;
+			index = index_y * cudaRenderCam->resolution.x + index_x;
+			ret_colour += accumbuffer[index] / 9.0f;
+		}
+
+	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
+	// averaged colour: divide colour by the number of calculated frames so far
+	Vec3f tempcol = ret_colour / framenumber;
+
 	Vec3f colour = Vec3f(clamp(tempcol.x, 0.0f, 1.0f), clamp(tempcol.y, 0.0f, 1.0f), clamp(tempcol.z, 0.0f, 1.0f));
 	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
+	Colour fcolour;
 	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
 										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
 										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
@@ -1186,7 +1208,10 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
 	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
-	PathTracingKernel << <grid, block >> >(outputbuf, accumbuf, HDRmap, nodes, triWoops, debugTris, 
+	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, HDRmap, nodes, triWoops, debugTris, 
 		triInds, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
+	cudaThreadSynchronize();
+
+	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, cudaRenderCam, framenumber);
 }
