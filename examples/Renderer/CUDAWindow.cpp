@@ -55,6 +55,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     triIndicesSize = 0;
     scalefactor = 1.2f;
     nocachedBVH = false;
+	m_interval = 64;
+	m_firsttime = true;
 
 	mtlfile = "data/teapot1.mtl";
     scenefile = "data/teapot1.obj"; 
@@ -119,6 +121,20 @@ void TriangleWindow::initializeGL()
     gluOrtho2D(0.0, width(), 0.0, height());
 }
 //! [4]
+
+void TriangleWindow::ProfilerBegin() {
+	QueryPerformanceFrequency(&m_tc);
+	QueryPerformanceCounter(&m_t1);
+}
+
+void TriangleWindow::ProfilerEnd(int numRays) {
+	double dff = m_tc.QuadPart;
+	QueryPerformanceCounter(&m_t2);
+	double s = (m_t2.QuadPart - m_t1.QuadPart) / dff;
+	printf("render time is %.3fs\n", s);
+	int rayPerSecond = numRays / s;
+	printf("path per second %d rays/s\n", rayPerSecond);
+}
 
 void TriangleWindow::createVBO(GLuint* vbo)
 {
@@ -340,11 +356,21 @@ void TriangleWindow::deleteCudaAndCpuMemory()
 //! [5]
 void TriangleWindow::paintGL()
 {
+	
     const qreal retinaScale = devicePixelRatio();
     glViewport(0, 0, width() * retinaScale, height() * retinaScale);
 
     // if camera has moved, reset the accumulation buffer
-    if (buffer_reset){ cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); framenumber = 0; }
+    if (buffer_reset){
+		cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
+		framenumber = 0; 
+	}
+
+	if(m_firsttime || buffer_reset)
+	{
+		m_firsttime = false;
+		ProfilerBegin();
+	}
 
     buffer_reset = false;
     framenumber++;
@@ -379,43 +405,16 @@ void TriangleWindow::paintGL()
     glDrawArrays(GL_POINTS, 0, width() * height());
     glDisableClientState(GL_VERTEX_ARRAY);
 
-
-    //m_program->bind();
-
-    //QMatrix4x4 matrix;
-    //matrix.perspective(60.0f, 4.0f/3.0f, 0.1f, 100.0f);
-    //matrix.translate(0, 0, -2);
-    //matrix.rotate(100.0f * m_frame / screen()->refreshRate(), 0, 1, 0);
-
-    //m_program->setUniformValue(m_matrixUniform, matrix);
-
-    //GLfloat vertices[] = {
-    //    0.0f, 0.707f,
-    //    -0.5f, -0.5f,
-    //    0.5f, -0.5f
-    //};
-
-    //GLfloat colors[] = {
-    //    1.0f, 0.0f, 0.0f,
-    //    0.0f, 1.0f, 0.0f,
-    //    0.0f, 0.0f, 1.0f
-    //};
-
-    //glVertexAttribPointer(m_posAttr, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    //glVertexAttribPointer(m_colAttr, 3, GL_FLOAT, GL_FALSE, 0, colors);
-
-    //glEnableVertexAttribArray(0);
-    //glEnableVertexAttribArray(1);
-
-    //glDrawArrays(GL_TRIANGLES, 0, 3);
-
-    //glDisableVertexAttribArray(1);
-    //glDisableVertexAttribArray(0);
-
-    //m_program->release();
-
     ++m_frame;
     update();
+
+	if(framenumber % m_interval == 0){
+		const int depth = 4;
+		const int samp = 1;
+		int numRays = width() * height() * depth * samp;
+		ProfilerEnd(numRays);
+	}
+	
 }
 //! [5]
 
