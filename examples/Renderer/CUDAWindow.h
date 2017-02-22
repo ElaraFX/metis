@@ -4,6 +4,7 @@
 
 #include "linear_math.h"
 #include "Util.h"
+#include "MMaterial.h"
 
 class Camera;
 class CudaBVH;
@@ -47,6 +48,7 @@ private:
     float4* cudaTriDebugPtr;
     float4* cudaTriNormalPtr;
     S32*    cudaTriIndicesPtr;
+	MaterialCUDA* cudaMaterialsPtr;
 
     Camera* cudaRendercam;
     Camera* hostRendercam;

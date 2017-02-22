@@ -267,7 +267,7 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
 	// fetch the 3 vertex indices of this triangle
 	const Vec3i& vtxInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).verticeIndex;
     const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).normalIndex;
-	const U32& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
+	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
     //const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).vertices; 
 	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
 	//const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);

@@ -30,11 +30,12 @@
 #include <cuda.h>
 #include "stdio.h"
 #include "Camera.h"
+#include "MMaterial.h"
 
 //#define scrwidth 1280
 //#define scrheight 720
 
-void cudaRender(const float4* cudaNodes, const float4* cudaTriWoops, const float4* cudaDebugTris, const int* cudaTriInds, 
+void cudaRender(const float4* cudaNodes, const float4* cudaTriWoops, const float4* cudaDebugTris, const int* cudaTriInds, const MaterialCUDA* mats, 
 	Vec3f* outputbuf, Vec3f* accumbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
 	const unsigned int totalnodecnt, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h);
 

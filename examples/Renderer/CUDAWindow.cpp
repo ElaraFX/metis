@@ -35,6 +35,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     cudaTriDebugPtr = NULL;
     cudaTriNormalPtr = NULL;
     cudaTriIndicesPtr = NULL;
+	cudaMaterialsPtr = NULL;
 
     cudaRendercam = NULL;
     hostRendercam = NULL;
@@ -96,8 +97,8 @@ void TriangleWindow::initializeGL()
     FILE* BVHcachefile = fopen(BVHcacheFilename.c_str(), "rb");
     if (!BVHcachefile){ nocachedBVH = true; }
 
-    //if (true){ // overrule cache
-    if (nocachedBVH){
+    if (true){ // overrule cache
+    //if (nocachedBVH){
         std::cout << "No cached BVH file available\nCreating new BVH...\n";
         // initialise all data needed to start rendering (BVH data, triangles, vertices)
         createBVH();
@@ -236,6 +237,9 @@ void TriangleWindow::initCUDAscenedata()
     cudaMalloc((void**)&cudaTriIndicesPtr, triIndicesSize * sizeof(S32));
     cudaMemcpy(cudaTriIndicesPtr, cpuTriIndicesPtr, triIndicesSize * sizeof(S32), cudaMemcpyHostToDevice);
 
+	cudaMalloc((void**)&cudaMaterialsPtr, materialNo * sizeof(MaterialCUDA));
+    cudaMemcpy(cudaMaterialsPtr, materials, materialNo * sizeof(MaterialCUDA), cudaMemcpyHostToDevice);
+
     std::cout << "Scene data copied to CUDA\n";
 }
 
@@ -307,6 +311,7 @@ void TriangleWindow::deleteCudaAndCpuMemory()
     cudaFree(cudaTriDebugPtr);
     cudaFree(cudaTriNormalPtr);
     cudaFree(cudaTriIndicesPtr);
+	cudaFree(cudaMaterialsPtr);
     cudaFree(cudaRendercam);
     cudaFree(accumulatebuffer);
     cudaFree(finaloutputbuffer);
@@ -352,7 +357,7 @@ void TriangleWindow::paintGL()
     unsigned int hashedframes = WangHash(framenumber);
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
-    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr, finaloutputbuffer,
+    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, finaloutputbuffer,
         accumulatebuffer, gpuHDRenv, framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height());
 
     cudaThreadSynchronize();
