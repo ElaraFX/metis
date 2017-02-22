@@ -189,7 +189,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 
 				// add tri index for current triangle to triIndexData	
 				triIndexData.add(bvh.getTriIndices()[j]); 
-				triIndexData.add(0); // zero padding because CUDA kernel uses same index for vertex array (3 vertices per triangle)
+				triIndexData.add(m_materialIndex); // zero padding because CUDA kernel uses same index for vertex array (3 vertices per triangle)
 				triIndexData.add(0); // and array of triangle indices
 			}
 
@@ -267,6 +267,7 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
 	// fetch the 3 vertex indices of this triangle
 	const Vec3i& vtxInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).verticeIndex;
     const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).normalIndex;
+	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
     //const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).vertices; 
 	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
 	//const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
@@ -288,6 +289,8 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     m_normaltri[0] = Vec4f(n0.x, n0.y, n0.z, 0.0f);
     m_normaltri[1] = Vec4f(n1.x, n1.y, n1.z, 0.0f);
     m_normaltri[2] = Vec4f(n2.x, n2.y, n2.z, 0.0f);
+
+	m_materialIndex = matInds;
 
 	Mat4f mtx;
 	// compute edges and transform them with a matrix 

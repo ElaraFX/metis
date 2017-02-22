@@ -16,19 +16,18 @@
 #include "linear_math.h"
 #include "Geometry.h"
 #include "SceneLoader.h"
-#include "MMaterial.h"
-
 
 using std::string;
 
 unsigned verticesNo = 0;
 unsigned normalsNo = 0;
 unsigned trianglesNo = 0;
+unsigned materialNo = 0;
 Vertex* vertices = NULL;   // vertex list
 Vec3f* normals = NULL;
 Triangle* triangles = NULL;  // triangle list
+MaterialCUDA* materials = NULL;
 
- 
 struct face {                  
 	std::vector<int> vertex;
 	std::vector<int> texture;
@@ -70,6 +69,7 @@ struct TriangleMesh
     std::vector<Vec3f> nors;
 	std::vector<Vec3i> faceVertIndexs;
     std::vector<Vec3i> faceNorIndexs;
+	std::vector<int> materialIndexs;
 	Vec3f bounding_box[2];   // mesh bounding box
 };
 
@@ -104,20 +104,21 @@ void load_object(const char *filename)
 			Vertex *pCurrentVertex = NULL;
             Vec3f *pCurrentNormal = NULL;
 			Triangle *pCurrentTriangle = NULL;
-			unsigned totalVertices, totalNormals, totalTriangles = 0;
+			MaterialCUDA *pCurrentMaterial = NULL;
+			unsigned totalVertices, totalNormals, totalTriangles = 0, totalMaterials;
 			TriangleMesh mesh;
 					
 			std::ifstream ifs(filenamestring.c_str(), std::ifstream::in);
 
 			if (!ifs.good())
 			{
-			std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
-			system("PAUSE");
-			exit(0);
+				std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
+				system("PAUSE");
+				exit(0);
 			}
 
 			MATERIALCONTAINER *curMaterialSet = NULL;
-			MMaterial *curMaterial = NULL; 
+			int curMaterialIndex = 0;
 			std::string line, key;
 			while (!ifs.eof() && std::getline(ifs, line)) {
 			    key = "";
@@ -149,7 +150,7 @@ void load_object(const char *filename)
 								if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname.c_str()) == 0)
 								{
 									bFound = true;
-									curMaterial = curMaterialSet->arrayMaterial[iMaterial];
+									curMaterialIndex = iMaterial + 1;
 									break;
 								}
 							}
@@ -158,7 +159,7 @@ void load_object(const char *filename)
 						// 若没找到材质为空
 						if(!bFound)
 						{
-							curMaterial = NULL;
+							curMaterialIndex = 0;
 							char szName[128] = " ";
 							printf(szName, "Error：Material %s cannot be found！", materialname.c_str());
 						}
@@ -200,7 +201,6 @@ void load_object(const char *filename)
 				    //tempnormal.normalize();
 				    //normals.push_back(tempnormals);
 			    }
-
 			    else if (key == "f") { // face
 				    face f;
 				    int v, t, n;
@@ -231,6 +231,7 @@ void load_object(const char *filename)
 			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
 			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
                     mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
+					mesh.materialIndexs.push_back(curMaterialIndex);
 			    }
 
 			    //while (stream >> v_extra) {
@@ -247,6 +248,7 @@ void load_object(const char *filename)
 			totalVertices = mesh.verts.size();
             totalNormals = mesh.nors.size();
 			totalTriangles = mesh.faceVertIndexs.size();
+			totalMaterials = g_MaterialContainer.arrayMaterial.size() + 1;
 
 			vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
 			verticesNo = totalVertices;
@@ -260,6 +262,11 @@ void load_object(const char *filename)
 			trianglesNo = totalTriangles;
 			pCurrentTriangle = triangles;
 
+			materials = (MaterialCUDA*)malloc(totalMaterials*sizeof(MaterialCUDA));
+			materialNo = totalMaterials;
+			pCurrentMaterial = materials;
+
+
 			std::cout << "total vertices: " << totalVertices << "\n";
             std::cout << "total normals: " << totalNormals << "\n";
 			std::cout << "total triangles: " << totalTriangles << "\n";
@@ -269,9 +276,6 @@ void load_object(const char *filename)
 				pCurrentVertex->x = currentvert.x;
 				pCurrentVertex->y = currentvert.y;
 				pCurrentVertex->z = currentvert.z;
-				//pCurrentVertex->_normal.x = 0.f; // not used for now, normals are computed on-the-fly by GPU
-				//pCurrentVertex->_normal.y = 0.f; // not used 
-				//pCurrentVertex->_normal.z = 0.f; // not used 
 
 				pCurrentVertex++;
 			}
@@ -287,6 +291,29 @@ void load_object(const char *filename)
                 pCurrentNormal++;
             }
 
+			for (int i = 0; i < materialNo; i++){
+				if(i == 0)
+				{
+					pCurrentMaterial->m_ColorReflect = 0;
+					pCurrentMaterial->m_SpecColorReflect = 0;
+					pCurrentMaterial->m_transparencyRate = 0;
+					pCurrentMaterial->m_glossiness = 0;
+					pCurrentMaterial->m_ior = 0;
+				}
+				else
+				{
+					MMaterial *currentmat = g_MaterialContainer.arrayMaterial[i - 1];
+
+					pCurrentMaterial->m_ColorReflect = currentmat->m_ColorReflect;
+					pCurrentMaterial->m_SpecColorReflect = currentmat->m_SpecColorReflect;
+					pCurrentMaterial->m_transparencyRate = currentmat->m_transparencyRate;
+					pCurrentMaterial->m_glossiness = currentmat->m_glossiness;
+					pCurrentMaterial->m_ior = currentmat->m_ior;
+				}
+                pCurrentMaterial++;
+            }
+
+
             std::cout << "Normals loaded\n";
 
 //			for (int i = 0; i < totalTriangles; i++)
@@ -296,6 +323,8 @@ void load_object(const char *filename)
 				
 				Vec3i currentfaceinds = mesh.faceVertIndexs[totalTriangles];
                 Vec3i currentnorminds = mesh.faceNorIndexs[totalTriangles];
+
+				pCurrentTriangle->m_idx = mesh.materialIndexs[totalTriangles];
 
 				pCurrentTriangle->v_idx1 = currentfaceinds.x - 1;
 				pCurrentTriangle->v_idx2 = currentfaceinds.y - 1;
@@ -328,7 +357,7 @@ void load_object(const char *filename)
 	std::cout << "Vertices:  " << verticesNo << std::endl;
     std::cout << "Normals:  " << normalsNo << std::endl;
 	std::cout << "Triangles: " << trianglesNo << std::endl;
-
+	std::cout << "Materials: " << materialNo << std::endl;
 }
 
 void load_material(const char* strFileName)

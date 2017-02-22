@@ -74,7 +74,7 @@ __constant__ Sphere spheres[] = {
 	//{ 0.5, { 30.0f, 180.5, 42 }, { 0, 0, 0 }, { .6f, .6f, 0.6f }, DIFF },  // small sphere 1  
 	//{ 0.8, { 2.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, SPEC },  // small sphere 2
 	//{ 0.8, { -3.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.0f, 0.0f, 0.2f }, COAT },  // small sphere 2
-	{ 0.1, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
+	{ 0.008, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
 	//{ 0.6, { -10.0f, -2.f, 1.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, DIFF },  // small sphere 2
 	//{ 0.8, { -1.0f, -0.7f, 4.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, REFR },  // small sphere 2
 	//{ 9.4, { 9.0f, 0.f, -9.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.f }, DIFF },  // small sphere 2
@@ -427,7 +427,7 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 
 __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
 	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices, 
-	int& hitTriIdx, float& hitdistance, int& debugbingo, Vec3f& trinormal, int leafcount, int tricount, bool anyHit)
+	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, int leafcount, int tricount, bool anyHit)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	// global threadId, see richiesams blogspot
@@ -457,6 +457,7 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 	int     leafAddr;               // If negative, then first postponed leaf, non-negative if no leaf (innernode).
 	int     nodeAddr;
 	int     hitIndex;               // Triangle index of the closest intersection, -1 if none.
+	int		hitMat;
 	float   hitT;                   // t-value of the closest intersection.
 	// Kepler kernel only
 	//int     leafAddr2;              // Second postponed leaf, non-negative if none.  
@@ -502,6 +503,7 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 		leafAddr = 0;   // No postponed leaf.
 		nodeAddr = 0;   // Start from the root.
 		hitIndex = -1;  // No triangle intersected so far.
+		hitMat = -1;
 		hitT = raydir.w; // tmax  
 	}
 
@@ -677,8 +679,7 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 						hitIndex = triAddr;
 						hitT = t;  /// keeps track of closest hitpoint
 
-						//trinormal = cross(v0 - v1, v0 - v2);
-
+						ng = cross(v0 - v1, v0 - v2);
                         trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
 						trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
 						trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
@@ -706,12 +707,15 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 	// Remap intersected triangle index, and store the result.
 
 	if (hitIndex != -1){
-		hitIndex = tex1Dfetch(triIndicesTexture, hitIndex);
+		hitTriIdx = gpuTriIndices[hitIndex];
+		hitMat = gpuTriIndices[hitIndex+1];
+
 		// remapping tri indices delayed until this point for performance reasons
 		// (slow texture memory lookup in de triIndicesTexture) because multiple triangles per node can potentially be hit
 	}
 
 	hitTriIdx = hitIndex;
+	hitMaterial = hitMat;
 	hitdistance = hitT;
 }
 
@@ -724,7 +728,7 @@ union Colour  // 4 bytes = 4 chars = 1 float
 };
 
 __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
+	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
@@ -735,6 +739,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		int hitSphereIdx = -1;
 		int hitTriIdx = -1;
 		int bestTriIdx = -1;
+		int hitMaterial = -1;
 		int geomtype = -1;
 		float hitSphereDist = 1e20;
 		float hitDistance = 1e20;
@@ -746,9 +751,11 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		Vec3f nl; // oriented normal
 		Vec3f nextdir; // ray direction of next path segment
 		Vec3f trinormal = Vec3f(0, 0, 0);
+		Vec3f ng = Vec3f(0, 0, 0);
 		Refl_t refltype;
 		float ray_tmin = 0.00001f; // set to 0.01f when using refractive material
 		float ray_tmax = 1e20;
+		MaterialCUDA material;
 
 		// intersect all triangles in the scene stored in BVH
 
@@ -758,7 +765,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		//	gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
 
 		intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
-		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
+		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, leafcount, tricount, false);
 
 
 		// intersect all spheres in the scene
@@ -766,12 +773,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		// float3 required for sphere intersection (to avoid "dynamic allocation not allowed" error)
 		float3 rayorig_flt3 = make_float3(rayorig.x, rayorig.y, rayorig.z);
 		float3 raydir_flt3 = make_float3(raydir.x, raydir.y, raydir.z);
-
-		float numspheres = sizeof(spheres) / sizeof(Sphere);
-		for (int i = int(numspheres); i--;)  // for all spheres in scene
-			// keep track of distance from origin to closest intersection point
-			if ((hitSphereDist = spheres[i].intersect(Ray(rayorig_flt3, raydir_flt3))) && hitSphereDist < scene_t && hitSphereDist > 0.01f){ 
-				scene_t = hitSphereDist; hitSphereIdx = i; geomtype = 1; }
 
 		if (hitDistance < scene_t && hitDistance > ray_tmin) // triangle hit
 		{
@@ -826,31 +827,18 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 
 #endif // end of HDR
 
-		// SPHERES:
-		if (geomtype == 1){
-			Sphere &hitsphere = spheres[hitSphereIdx]; // hit object with closest intersection
-			hitpoint = rayorig + raydir * scene_t;  // intersection point on object
-			n = Vec3f(hitpoint.x - hitsphere.pos.x, hitpoint.y - hitsphere.pos.y, hitpoint.z - hitsphere.pos.z);	// normal
-			n.normalize();
-			nl = dot(n, raydir) < 0 ? n : n * -1; // correctly oriented normal
-			objcol = Vec3f(hitsphere.col.x, hitsphere.col.y, hitsphere.col.z);   // object colour
-			emit = Vec3f(hitsphere.emi.x, hitsphere.emi.y, hitsphere.emi.z);  // object emission
-			refltype = hitsphere.refl;
-			accucolor += (mask * emit);
-		}
-
 		// TRIANGLES:
 		if (geomtype == 2){
-
+			material = mats[hitMaterial];
 			//pBestTri = &pTriangles[triangle_id];
 			hitpoint = rayorig + raydir * scene_t; // intersection point
 					
 			// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
 			n = trinormal;
 			n.normalize();
-			nl = dot(n, raydir) < 0 ? n : n * -1;  // correctly oriented normal
+			nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
 			//Vec3f colour = hitTriIdx->_colorf;
-			Vec3f colour = Vec3f(.9f, 0.3f, 0.0f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
+			Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
 			refltype = DIFF; // objectmaterial
 			objcol = colour;
 			emit = Vec3f(0.0, 0.0, 0);  // object emission
@@ -860,77 +848,77 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		// basic material system, all parameters are hard-coded (such as phong exponent, index of refraction)
 
 		// diffuse material, based on smallpt by Kevin Beason 
-		if (refltype == DIFF){
+		//if (refltype == DIFF){
 
-			// pick two random numbers
-			float phi = 2 * M_PI * curand_uniform(randstate);
-			float r2 = curand_uniform(randstate);
-			float r2s = sqrtf(r2);
+		//	// pick two random numbers
+		//	float phi = 2 * M_PI * curand_uniform(randstate);
+		//	float r2 = curand_uniform(randstate);
+		//	float r2s = sqrtf(r2);
 
-			// compute orthonormal coordinate frame uvw with hitpoint as origin 
-			Vec3f w = nl; w.normalize();
-			Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-			Vec3f v = cross(w, u);
+		//	// compute orthonormal coordinate frame uvw with hitpoint as origin 
+		//	Vec3f w = nl; w.normalize();
+		//	Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+		//	Vec3f v = cross(w, u);
 
-			// compute cosine weighted random ray direction on hemisphere 
-			nextdir = u*cosf(phi)*r2s + v*sinf(phi)*r2s + w*sqrtf(1 - r2);
-			nextdir.normalize();
+		//	// compute cosine weighted random ray direction on hemisphere 
+		//	nextdir = u*cosf(phi)*r2s + v*sinf(phi)*r2s + w*sqrtf(1 - r2);
+		//	nextdir.normalize();
 
-			// offset origin next path segment to prevent self intersection
-			hitpoint += nl * 0.001f; // scene size dependent
+		//	// offset origin next path segment to prevent self intersection
+		//	hitpoint += nl * 0.001f; // scene size dependent
 
-			// multiply mask with colour of object
-			mask *= objcol;
+		//	// multiply mask with colour of object
+		//	mask *= objcol;
 
-		} // end diffuse material
+		//} // end diffuse material
 
 		// Phong metal material from "Realistic Ray Tracing", P. Shirley
-		if (refltype == METAL){
+		//if (refltype == METAL){
 
-			// compute random perturbation of ideal reflection vector
-			// the higher the phong exponent, the closer the perturbed vector is to the ideal reflection direction
-			float phi = 2 * M_PI * curand_uniform(randstate);
-			float r2 = curand_uniform(randstate);
-			float phongexponent = 30;
-			float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
-			float sinTheta = sqrtf(1 - cosTheta * cosTheta);
+		//	// compute random perturbation of ideal reflection vector
+		//	// the higher the phong exponent, the closer the perturbed vector is to the ideal reflection direction
+		//	float phi = 2 * M_PI * curand_uniform(randstate);
+		//	float r2 = curand_uniform(randstate);
+		//	float phongexponent = 30;
+		//	float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
+		//	float sinTheta = sqrtf(1 - cosTheta * cosTheta);
 
-			// create orthonormal basis uvw around reflection vector with hitpoint as origin 
-			// w is ray direction for ideal reflection
-			Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
-			Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-			Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
+		//	// create orthonormal basis uvw around reflection vector with hitpoint as origin 
+		//	// w is ray direction for ideal reflection
+		//	Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
+		//	Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+		//	Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
 
-			// compute cosine weighted random ray direction on hemisphere 
-			nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
-			nextdir.normalize();
+		//	// compute cosine weighted random ray direction on hemisphere 
+		//	nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
+		//	nextdir.normalize();
 
-			// offset origin next path segment to prevent self intersection
-			hitpoint += nl * 0.0001f;  // scene size dependent
+		//	// offset origin next path segment to prevent self intersection
+		//	hitpoint += nl * 0.0001f;  // scene size dependent
 
-			// multiply mask with colour of object
-			mask *= objcol;
-		}
+		//	// multiply mask with colour of object
+		//	mask *= objcol;
+		//}
 
 		// ideal specular reflection (mirror) 
-		if (refltype == SPEC){
+		//if (hitMaterial == 2){
 
-			// compute relfected ray direction according to Snell's law
-			nextdir = raydir - n * dot(n, raydir) * 2.0f;
-			nextdir.normalize();
+		//	// compute relfected ray direction according to Snell's law
+		//	nextdir = raydir - n * dot(n, raydir) * 2.0f;
+		//	nextdir.normalize();
 
-			// offset origin next path segment to prevent self intersection
-			hitpoint += nl * 0.001f;
+		//	// offset origin next path segment to prevent self intersection
+		//	hitpoint += nl * 0.001f;
 
-			// multiply mask with colour of object
-			mask *= objcol;
-		}
+		//	// multiply mask with colour of object
+		//	mask *= objcol;
+		//}
 
 
 		// COAT material based on https://github.com/peterkutz/GPUPathTracer
 		// randomly select diffuse or specular reflection
 		// looks okay-ish but inaccurate (no Fresnel calculation yet)
-		if (refltype == COAT){
+		{
 
 			float rouletteRandomFloat = curand_uniform(randstate);
 			float threshold = 0.05f;
@@ -970,63 +958,63 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 				hitpoint += nl * 0.001f;  // // scene size dependent
 
 				// multiply mask with colour of object
-				mask *= objcol;
+				mask *= material.m_ColorReflect;
 			}
 		} // end COAT
 
 		// perfectly refractive material (glass, water)
 		// set ray_tmin to 0.01 when using refractive material
-		if (refltype == REFR){
+		//if (refltype == REFR){
 
-			bool into = dot(n, nl) > 0; // is ray entering or leaving refractive material?
-			float nc = 1.0f;  // Index of Refraction air
-			float nt = 1.4f;  // Index of Refraction glass/water
-			float nnt = into ? nc / nt : nt / nc;  // IOR ratio of refractive materials
-			float ddn = dot(raydir, nl);
-			float cos2t = 1.0f - nnt*nnt * (1.f - ddn*ddn);
+		//	bool into = dot(n, nl) > 0; // is ray entering or leaving refractive material?
+		//	float nc = 1.0f;  // Index of Refraction air
+		//	float nt = 1.4f;  // Index of Refraction glass/water
+		//	float nnt = into ? nc / nt : nt / nc;  // IOR ratio of refractive materials
+		//	float ddn = dot(raydir, nl);
+		//	float cos2t = 1.0f - nnt*nnt * (1.f - ddn*ddn);
 
-			if (cos2t < 0.0f) // total internal reflection 
-			{
-				nextdir = raydir - n * 2.0f * dot(n, raydir);
-				nextdir.normalize();
+		//	if (cos2t < 0.0f) // total internal reflection 
+		//	{
+		//		nextdir = raydir - n * 2.0f * dot(n, raydir);
+		//		nextdir.normalize();
 
-				// offset origin next path segment to prevent self intersection
-				hitpoint += nl * 0.001f; // scene size dependent
-			}
-			else // cos2t > 0
-			{
-				// compute direction of transmission ray
-				Vec3f tdir = raydir * nnt;
-				tdir -= n * ((into ? 1 : -1) * (ddn*nnt + sqrtf(cos2t)));
-				tdir.normalize();
+		//		// offset origin next path segment to prevent self intersection
+		//		hitpoint += nl * 0.001f; // scene size dependent
+		//	}
+		//	else // cos2t > 0
+		//	{
+		//		// compute direction of transmission ray
+		//		Vec3f tdir = raydir * nnt;
+		//		tdir -= n * ((into ? 1 : -1) * (ddn*nnt + sqrtf(cos2t)));
+		//		tdir.normalize();
 
-				float R0 = (nt - nc)*(nt - nc) / (nt + nc)*(nt + nc);
-				float c = 1.f - (into ? -ddn : dot(tdir, n));
-				float Re = R0 + (1.f - R0) * c * c * c * c * c;
-				float Tr = 1 - Re; // Transmission
-				float P = .25f + .5f * Re;
-				float RP = Re / P;
-				float TP = Tr / (1.f - P);
+		//		float R0 = (nt - nc)*(nt - nc) / (nt + nc)*(nt + nc);
+		//		float c = 1.f - (into ? -ddn : dot(tdir, n));
+		//		float Re = R0 + (1.f - R0) * c * c * c * c * c;
+		//		float Tr = 1 - Re; // Transmission
+		//		float P = .25f + .5f * Re;
+		//		float RP = Re / P;
+		//		float TP = Tr / (1.f - P);
 
-				// randomly choose reflection or transmission ray
-				if (curand_uniform(randstate) < 0.2) // reflection ray
-				{
-					mask *= RP;
-					nextdir = raydir - n * 2.0f * dot(n, raydir);
-					nextdir.normalize();
+		//		// randomly choose reflection or transmission ray
+		//		if (curand_uniform(randstate) < 0.2) // reflection ray
+		//		{
+		//			mask *= RP;
+		//			nextdir = raydir - n * 2.0f * dot(n, raydir);
+		//			nextdir.normalize();
 
-					hitpoint += nl * 0.001f; // scene size dependent
-				}
-				else // transmission ray
-				{
-					mask *= TP;
-					nextdir = tdir; 
-					nextdir.normalize();
+		//			hitpoint += nl * 0.001f; // scene size dependent
+		//		}
+		//		else // transmission ray
+		//		{
+		//			mask *= TP;
+		//			nextdir = tdir; 
+		//			nextdir.normalize();
 
-					hitpoint += nl * 0.001f; // epsilon must be small to avoid artefacts
-				}
-			}
-		}
+		//			hitpoint += nl * 0.001f; // epsilon must be small to avoid artefacts
+		//		}
+		//	}
+		//}
 
 		// set up origin and direction of next path segment
 		rayorig = hitpoint; 
@@ -1037,7 +1025,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 }
 
 __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
+	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
 	unsigned int tricount, const Camera* cudaRendercam) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
@@ -1127,7 +1115,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, 
+		finalcol += renderKernel(&randState, HDRmap, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats,
 				originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
@@ -1166,6 +1154,10 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, const Camera* cu
 	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
 										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
 										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+
+		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
+		//								(unsigned char)(colour.y* 255), 
+		//								(unsigned char)(colour.z* 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);
@@ -1174,7 +1166,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, const Camera* cu
 bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
-void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, 
+void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats,
 	Vec3f* outputbuf, Vec3f* accumbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
 	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h){
 
@@ -1208,8 +1200,9 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
 	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
+
 	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, HDRmap, nodes, triWoops, debugTris, 
-		triInds, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
+		triInds, mats, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
 

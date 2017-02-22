@@ -144,6 +144,7 @@ private:
 	U32		m_gpuTriIndicesSize;
 	U32		m_leafnodecount;
 	U32     m_tricount;
+	S32		m_materialIndex;
 
 	Vec4f   m_woop[3];
 	Vec4f	m_debugtri[3];

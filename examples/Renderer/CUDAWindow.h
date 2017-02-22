@@ -2,8 +2,12 @@
 #include <QtWidgets/QOpenGLWidget>
 #include <QOpenGLFunctions>
 
+#include <Windows.h>
+
 #include "linear_math.h"
 #include "Util.h"
+#include "MMaterial.h"
+
 
 class Camera;
 class CudaBVH;
@@ -21,6 +25,8 @@ public:
     void writeBVHcachefile(FILE* BVHcachefile, const std::string BVHcacheFilename);
     void initHDR();
 
+	void ProfilerBegin();
+	void ProfilerEnd(int numRays);
 
 protected:
     void initializeGL() Q_DECL_OVERRIDE;
@@ -47,6 +53,7 @@ private:
     float4* cudaTriDebugPtr;
     float4* cudaTriNormalPtr;
     S32*    cudaTriIndicesPtr;
+	MaterialCUDA* cudaMaterialsPtr;
 
     Camera* cudaRendercam;
     Camera* hostRendercam;
@@ -71,7 +78,10 @@ private:
     const char* scenefile; 
     const char* HDRmapname;
 
-    int m_frame;
+    int				m_frame;
+	int				m_interval;
+	bool			m_firsttime;
+	LARGE_INTEGER	m_t1, m_t2, m_tc;
 
     QPoint lastPos;
 };

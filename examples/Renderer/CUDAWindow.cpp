@@ -35,6 +35,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     cudaTriDebugPtr = NULL;
     cudaTriNormalPtr = NULL;
     cudaTriIndicesPtr = NULL;
+	cudaMaterialsPtr = NULL;
 
     cudaRendercam = NULL;
     hostRendercam = NULL;
@@ -54,8 +55,10 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     triIndicesSize = 0;
     scalefactor = 1.2f;
     nocachedBVH = false;
+	m_interval = 64;
+	m_firsttime = true;
 
-	mtlfile = "";
+	mtlfile = "data/teapot1.mtl";
     scenefile = "data/teapot1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
@@ -97,7 +100,7 @@ void TriangleWindow::initializeGL()
     if (!BVHcachefile){ nocachedBVH = true; }
 
     //if (true){ // overrule cache
-    if (1){
+	if (nocachedBVH){
         std::cout << "No cached BVH file available\nCreating new BVH...\n";
         // initialise all data needed to start rendering (BVH data, triangles, vertices)
         createBVH();
@@ -118,6 +121,20 @@ void TriangleWindow::initializeGL()
     gluOrtho2D(0.0, width(), 0.0, height());
 }
 //! [4]
+
+void TriangleWindow::ProfilerBegin() {
+	QueryPerformanceFrequency(&m_tc);
+	QueryPerformanceCounter(&m_t1);
+}
+
+void TriangleWindow::ProfilerEnd(int numRays) {
+	double dff = m_tc.QuadPart;
+	QueryPerformanceCounter(&m_t2);
+	double s = (m_t2.QuadPart - m_t1.QuadPart) / dff;
+	printf("render time is %.3fs\n", s);
+	int rayPerSecond = numRays / s;
+	printf("path per second %d rays/s\n", rayPerSecond);
+}
 
 void TriangleWindow::createVBO(GLuint* vbo)
 {
@@ -142,20 +159,24 @@ void TriangleWindow::loadBVHfromCache(FILE* BVHcachefile, const std::string BVHc
     if (1 != fread(&triWoopSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (1 != fread(&triDebugSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (1 != fread(&triIndicesSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
+	if (1 != fread(&materialNo, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
 
     std::cout << "Number of nodes: " << nodeSize << "\n";
     std::cout << "Number of triangles: " << triangle_count << "\n";
+	std::cout << "Number of Materials: " << materialNo << "\n";
     std::cout << "Number of BVH leafnodes: " << leafnode_count << "\n";
 
     cpuNodePtr = (Vec4i*)malloc(nodeSize * sizeof(Vec4i));
     cpuTriWoopPtr = (Vec4i*)malloc(triWoopSize * sizeof(Vec4i));
     cpuTriDebugPtr = (Vec4i*)malloc(triDebugSize * sizeof(Vec4i));
     cpuTriIndicesPtr = (S32*)malloc(triIndicesSize * sizeof(S32));
+	materials = (MaterialCUDA*)malloc(materialNo * sizeof(MaterialCUDA));
 
     if (nodeSize != fread(cpuNodePtr, sizeof(Vec4i), nodeSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triWoopSize != fread(cpuTriWoopPtr, sizeof(Vec4i), triWoopSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triDebugSize != fread(cpuTriDebugPtr, sizeof(Vec4i), triDebugSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
     if (triIndicesSize != fread(cpuTriIndicesPtr, sizeof(S32), triIndicesSize, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
+	if (materialNo != fread(materials, sizeof(MaterialCUDA), materialNo, BVHcachefile)) std::cout << "Error reading BVH cache file!\n";
 
     fclose(BVHcachefile);
     std::cout << "Successfully loaded BVH from cache file!\n";
@@ -171,10 +192,13 @@ void TriangleWindow::writeBVHcachefile(FILE* BVHcachefile, const std::string BVH
     if (1 != fwrite(&triWoopSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (1 != fwrite(&triDebugSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (1 != fwrite(&triIndicesSize, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+	if (1 != fwrite(&materialNo, sizeof(unsigned), 1, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+
     if (nodeSize != fwrite(cpuNodePtr, sizeof(Vec4i), nodeSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triWoopSize != fwrite(cpuTriWoopPtr, sizeof(Vec4i), triWoopSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triDebugSize != fwrite(cpuTriDebugPtr, sizeof(Vec4i), triDebugSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
     if (triIndicesSize != fwrite(cpuTriIndicesPtr, sizeof(S32), triIndicesSize, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
+	if (materialNo != fwrite(materials, sizeof(MaterialCUDA), materialNo, BVHcachefile)) std::cout << "Error writing BVH cache file!\n";
 
     fclose(BVHcachefile);
     std::cout << "Successfully created BVH cache file!\n";
@@ -236,6 +260,9 @@ void TriangleWindow::initCUDAscenedata()
     cudaMalloc((void**)&cudaTriIndicesPtr, triIndicesSize * sizeof(S32));
     cudaMemcpy(cudaTriIndicesPtr, cpuTriIndicesPtr, triIndicesSize * sizeof(S32), cudaMemcpyHostToDevice);
 
+	cudaMalloc((void**)&cudaMaterialsPtr, materialNo * sizeof(MaterialCUDA));
+    cudaMemcpy(cudaMaterialsPtr, materials, materialNo * sizeof(MaterialCUDA), cudaMemcpyHostToDevice);
+
     std::cout << "Scene data copied to CUDA\n";
 }
 
@@ -259,6 +286,7 @@ void TriangleWindow::createBVH(){
         Scene::Triangle newtri;
         newtri.verticeIndex = Vec3i(triangles[i].v_idx1, triangles[i].v_idx2, triangles[i].v_idx3);
         newtri.normalIndex = Vec3i(triangles[i].n_idx1, triangles[i].n_idx2, triangles[i].n_idx3);
+		newtri.materialIndex = triangles[i].m_idx;
         tris.add(newtri);
     }
 
@@ -306,6 +334,7 @@ void TriangleWindow::deleteCudaAndCpuMemory()
     cudaFree(cudaTriDebugPtr);
     cudaFree(cudaTriNormalPtr);
     cudaFree(cudaTriIndicesPtr);
+	cudaFree(cudaMaterialsPtr);
     cudaFree(cudaRendercam);
     cudaFree(accumulatebuffer);
     cudaFree(finaloutputbuffer);
@@ -327,11 +356,21 @@ void TriangleWindow::deleteCudaAndCpuMemory()
 //! [5]
 void TriangleWindow::paintGL()
 {
+	
     const qreal retinaScale = devicePixelRatio();
     glViewport(0, 0, width() * retinaScale, height() * retinaScale);
 
     // if camera has moved, reset the accumulation buffer
-    if (buffer_reset){ cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); framenumber = 0; }
+    if (buffer_reset){
+		cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
+		framenumber = 0; 
+	}
+
+	if(m_firsttime || buffer_reset)
+	{
+		m_firsttime = false;
+		ProfilerBegin();
+	}
 
     buffer_reset = false;
     framenumber++;
@@ -351,7 +390,7 @@ void TriangleWindow::paintGL()
     unsigned int hashedframes = WangHash(framenumber);
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
-    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr, finaloutputbuffer,
+    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, finaloutputbuffer,
         accumulatebuffer, gpuHDRenv, framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height());
 
     cudaThreadSynchronize();
@@ -366,43 +405,16 @@ void TriangleWindow::paintGL()
     glDrawArrays(GL_POINTS, 0, width() * height());
     glDisableClientState(GL_VERTEX_ARRAY);
 
-
-    //m_program->bind();
-
-    //QMatrix4x4 matrix;
-    //matrix.perspective(60.0f, 4.0f/3.0f, 0.1f, 100.0f);
-    //matrix.translate(0, 0, -2);
-    //matrix.rotate(100.0f * m_frame / screen()->refreshRate(), 0, 1, 0);
-
-    //m_program->setUniformValue(m_matrixUniform, matrix);
-
-    //GLfloat vertices[] = {
-    //    0.0f, 0.707f,
-    //    -0.5f, -0.5f,
-    //    0.5f, -0.5f
-    //};
-
-    //GLfloat colors[] = {
-    //    1.0f, 0.0f, 0.0f,
-    //    0.0f, 1.0f, 0.0f,
-    //    0.0f, 0.0f, 1.0f
-    //};
-
-    //glVertexAttribPointer(m_posAttr, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    //glVertexAttribPointer(m_colAttr, 3, GL_FLOAT, GL_FALSE, 0, colors);
-
-    //glEnableVertexAttribArray(0);
-    //glEnableVertexAttribArray(1);
-
-    //glDrawArrays(GL_TRIANGLES, 0, 3);
-
-    //glDisableVertexAttribArray(1);
-    //glDisableVertexAttribArray(0);
-
-    //m_program->release();
-
     ++m_frame;
     update();
+
+	if(framenumber % m_interval == 0){
+		const int depth = 4;
+		const int samp = 1;
+		int numRays = width() * height() * depth * samp;
+		ProfilerEnd(numRays);
+	}
+	
 }
 //! [5]
 
