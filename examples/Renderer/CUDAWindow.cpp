@@ -463,3 +463,7 @@ void TriangleWindow::mouseReleaseEvent(QMouseEvent * /* event */)
 {
     //emit clicked();
 }
+
+void TriangleWindow::keyPressEvent(QKeyEvent *)
+{
+}

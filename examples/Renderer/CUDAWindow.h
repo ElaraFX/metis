@@ -36,6 +36,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseMoveEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+	void keyPressEvent(QKeyEvent *) Q_DECL_OVERRIDE;
+
 public slots:
 	void slotWindowSizeChanged(int size);
 	void slotVariancChanged(double val);
