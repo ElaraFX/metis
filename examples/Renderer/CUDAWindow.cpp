@@ -59,13 +59,13 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     triIndicesSize = 0;
     scalefactor = 1.2f;
     nocachedBVH = false;
-	m_interval = 64;
+	m_interval = 4;
 	m_firsttime = true;
 
-	m_windowSize = 10;
-	m_variance_pos = 1000;
-	m_variance_col = 1000;
-	m_variance_dep = 1000;
+	m_windowSize = 20;
+	m_variance_pos = 100;
+	m_variance_col = 50;
+	m_variance_dep = 100;
 
 	mtlfile = "data/class1.mtl";
     scenefile = "data/class1.obj"; 

@@ -1203,8 +1203,8 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
-	if (x > cudaRenderCam->resolution.x / 2)
-	//if (framenumber < 1)
+	//if (x > cudaRenderCam->resolution.x / 2)
+	if (framenumber < 180)
 	{
 		ret_colour = accumbuffer[i];
 	}
@@ -1228,7 +1228,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 				index = index_y * cudaRenderCam->resolution.x + index_x;
 				weight = /*((abs(eyecosdepthbuffer[i] - eyecosdepthbuffer[index]) < 0.001f) ? 1.0f : 
 					exp(-(depthbuffer[i] - depthbuffer[index]) * (depthbuffer[i] - depthbuffer[index]) / (2.0f * dep_variance))) **/	
-					//max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
+					max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
 					(!(materialbuffer[i] - materialbuffer[index]) ? 1.0f : 0.0f) *		
 					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
 					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
