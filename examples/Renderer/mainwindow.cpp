@@ -209,6 +209,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     //fillView();
     itemClicked(0);
+
+	cudaWindow->setFocus();
 }
 
 void MainWindow::newRectangle()

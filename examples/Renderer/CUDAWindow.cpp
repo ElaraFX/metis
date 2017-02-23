@@ -59,7 +59,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     triIndicesSize = 0;
     scalefactor = 1.2f;
     nocachedBVH = false;
-	m_interval = 4;
+	m_interval = 64;
 	m_firsttime = true;
 
 	m_windowSize = 20;
@@ -509,6 +509,28 @@ void TriangleWindow::mouseReleaseEvent(QMouseEvent * /* event */)
     //emit clicked();
 }
 
-void TriangleWindow::keyPressEvent(QKeyEvent *)
+void TriangleWindow::keyPressEvent(QKeyEvent *event)
 {
+	if(event->key() == Qt::Key_W) 
+    {
+		interactiveCamera->goForward(200);
+		buffer_reset = true;
+    }
+	else if(event->key() == Qt::Key_A) 
+    {
+    }
+	else if(event->key() == Qt::Key_S) 
+    {
+		interactiveCamera->goForward(-200);
+		buffer_reset = true;
+    }
+	else if(event->key() == Qt::Key_D) 
+    {
+    }
+	else if(event->key() == Qt::Key_Q) 
+    {
+    }
+	else if(event->key() == Qt::Key_E) 
+    {
+    }
 }
