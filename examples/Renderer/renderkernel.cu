@@ -733,7 +733,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
 	Vec3f direct = Vec3f(0, 0, 0);
-
+	bool lastmaterialisdiffuse = false; 
 	for (int bounces = 0; bounces < 4; bounces++){  // iteration up to 4 bounces (instead of recursion in CPU code)
 
 		int hitSphereIdx = -1;
@@ -789,7 +789,9 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		// HDR 
 
 		if (scene_t > 1e19) { // if ray misses scene, return sky
-
+			emit = Vec3f(1.2f, 1.2f, 1.3f);
+			accucolor += (mask * emit); 
+			return accucolor; 
 			// HDR environment map code based on Syntopia "Path tracing 3D fractals"
 			// http://blog.hvidtfeldts.net/index.php/2015/01/path-tracing-3d-fractals/
 			// https://github.com/Syntopia/Fragmentarium/blob/master/Fragmentarium-Source/Examples/Include/IBL-Pathtracer.frag
@@ -921,26 +923,70 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 		{
 
 			float rouletteRandomFloat = curand_uniform(randstate);
-			float threshold = 0.05f;
-			Vec3f specularColor = Vec3f(1, 1, 1);  // hard-coded
-			bool reflectFromSurface = (rouletteRandomFloat < threshold); //computeFresnel(make_Vec3f(n.x, n.y, n.z), incident, incidentIOR, transmittedIOR, reflectionDirection, transmissionDirection).reflectionCoefficient);
-
-			if (reflectFromSurface) { // calculate perfectly specular reflection
-
-				// Ray reflected from the surface. Trace a ray in the reflection direction.
-				// TODO: Use Russian roulette instead of simple multipliers! 
-				// (Selecting between diffuse sample and no sample (absorption) in this case.)
-
-				mask *= specularColor;
-				nextdir = raydir - n * 2.0f * dot(n, raydir);
-				nextdir.normalize();
+			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z)
+			{
 				
-				// offset origin next path segment to prevent self intersection
-				hitpoint += nl * 0.001f; // scene size dependent
+				float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
+				float ddn = -dot(raydir, nl);
+		        
+				float reflect = powf(1.0f - ddn, nt);
+		        if (reflect > rouletteRandomFloat) // total internal reflection 
+		        {
+					if (lastmaterialisdiffuse) break;
+					nextdir = raydir - n * 2.0f * dot(n, raydir);
+					nextdir.normalize();
+					float phi = 2 * M_PI * curand_uniform(randstate);
+					float r2 = curand_uniform(randstate);
+					float phongexponent = material.m_glossiness;
+					float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
+					float sinTheta = sqrtf(1 - cosTheta * cosTheta);
+
+					// create orthonormal basis uvw around reflection vector with hitpoint as origin 
+					// w is ray direction for ideal reflection
+					Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
+					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+					Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
+
+					// compute cosine weighted random ray direction on hemisphere 
+					nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
+					nextdir.normalize();
+
+					// offset origin next path segment to prevent self intersection
+					hitpoint += nl * 0.0001f;  // scene size dependent
+
+					// multiply mask with colour of object
+					mask *= material.m_SpecColorReflect;
+					// offset origin next path segment to prevent self intersection
+					hitpoint += nl * 0.001f; // scene size dependent
+
+					lastmaterialisdiffuse = false;
+				}
+				else
+				{
+					float r1 = 2 * M_PI * curand_uniform(randstate);
+					float r2 = curand_uniform(randstate);
+					float r2s = sqrtf(r2);
+
+					// compute orthonormal coordinate frame uvw with hitpoint as origin 
+					Vec3f w = nl; w.normalize();
+					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+					Vec3f v = cross(w, u);
+
+					// compute cosine weighted random ray direction on hemisphere 
+					nextdir = u*cosf(r1)*r2s + v*sinf(r1)*r2s + w*sqrtf(1 - r2);
+					nextdir.normalize();
+
+					// offset origin next path segment to prevent self intersection
+					hitpoint += nl * 0.001f;  // // scene size dependent
+
+					// multiply mask with colour of object
+					mask *= material.m_ColorReflect;
+
+					lastmaterialisdiffuse = true;
+				}
 			}
-
-			else {  // calculate perfectly diffuse reflection
-
+			else
+			{
 				float r1 = 2 * M_PI * curand_uniform(randstate);
 				float r2 = curand_uniform(randstate);
 				float r2s = sqrtf(r2);
@@ -959,7 +1005,11 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 
 				// multiply mask with colour of object
 				mask *= material.m_ColorReflect;
+
+				lastmaterialisdiffuse = true;
 			}
+
+			
 		} // end COAT
 
 		// perfectly refractive material (glass, water)
@@ -1125,17 +1175,23 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 	// averaged colour: divide colour by the number of calculated frames so far
 	Vec3f tempcol = accumbuffer[i] / framenumber;
 
+	tempcol *= 8.0f;
+
+	tempcol.x = tempcol.x / (tempcol.x + 1.0f); 
+	tempcol.y = tempcol.y / (tempcol.y + 1.0f); 
+	tempcol.z = tempcol.z / (tempcol.z + 1.0f); 
+
 	Colour fcolour;
-	Vec3f colour = Vec3f(clamp(tempcol.x, 0.0f, 1.0f), clamp(tempcol.y, 0.0f, 1.0f), clamp(tempcol.z, 0.0f, 1.0f));
+	Vec3f colour = tempcol;
 	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+	//fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
+	//									(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
+	//									(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
 
-		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-		//								(unsigned char)(colour.y* 255), 
-		//								(unsigned char)(colour.z* 255), 1);
+		fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
+										(unsigned char)(colour.y* 255), 
+										(unsigned char)(colour.z* 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);

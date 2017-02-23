@@ -58,8 +58,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_interval = 64;
 	m_firsttime = true;
 
-	mtlfile = "data/teapot1.mtl";
-    scenefile = "data/teapot1.obj"; 
+	mtlfile = "data/class1.mtl";
+    scenefile = "data/class1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
