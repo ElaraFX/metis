@@ -58,7 +58,11 @@ private:
     Camera* cudaRendercam;
     Camera* hostRendercam;
     Vec3f* accumulatebuffer; // image buffer storing accumulated pixel samples
-    Vec3f* finaloutputbuffer; // stores averaged pixel samples
+    Vec3f* normalbuffer;	// stores ray intersect normal per pixel samples
+	Vec3f* finaloutputbuffer; // stores averaged pixel samples
+    float* depthbuffer; // stores ray intersect depth per pixel samples
+    float* eyecosdepthbuffer; // stores ray intersect depth with eye ray cos per pixel samples
+    int* materialbuffer; // stores ray intersect material per pixel samples
     float4* gpuHDRenv;
     Vec4f* cpuHDRenv;
     Vec4f* m_triNormals;
