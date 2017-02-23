@@ -1204,7 +1204,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
 	//if (x > cudaRenderCam->resolution.x / 2)
-	if (framenumber < 180)
+	if (framenumber < 200)
 	{
 		ret_colour = accumbuffer[i];
 	}

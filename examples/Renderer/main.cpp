@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     qApp->setPalette(p);
 
     MainWindow mw;
-    mw.resize(1600, 900);
+    mw.resize(1500, 800);
     mw.show();
 
     //QSurfaceFormat format;

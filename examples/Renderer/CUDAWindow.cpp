@@ -62,9 +62,9 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_interval = 64;
 	m_firsttime = true;
 
-	m_windowSize = 20;
+	m_windowSize = 15;
 	m_variance_pos = 100;
-	m_variance_col = 50;
+	m_variance_col = 40;
 	m_variance_dep = 100;
 
 	mtlfile = "data/class1.mtl";
