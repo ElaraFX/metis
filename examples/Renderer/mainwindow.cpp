@@ -169,15 +169,25 @@ MainWindow::MainWindow(QWidget *parent)
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
 	m_filterSizeSpin = new QSpinBox();
-	m_varianceSpin = new QDoubleSpinBox();
+	m_variancePosSpin = new QDoubleSpinBox();
+	m_varianceColSpin = new QDoubleSpinBox();
+	m_varianceDepSpin = new QDoubleSpinBox();
 	fileToolBar->addWidget(m_filterSizeSpin);
-	fileToolBar->addWidget(m_varianceSpin);
+	fileToolBar->addWidget(m_variancePosSpin);
+	fileToolBar->addWidget(m_varianceColSpin);
+	fileToolBar->addWidget(m_varianceDepSpin);
 
-	m_filterSizeSpin->setValue(10);
-	m_varianceSpin->setRange(0, 9999999);
-	m_varianceSpin->setValue(1000);
+	m_filterSizeSpin->setValue(20);
+	m_variancePosSpin->setRange(0, 9999999);
+	m_variancePosSpin->setValue(100);
+	m_varianceColSpin->setRange(0, 9999999);
+	m_varianceColSpin->setValue(50);
+	m_varianceDepSpin->setRange(0, 9999999);
+	m_varianceDepSpin->setValue(100);
 	connect(m_filterSizeSpin, SIGNAL(valueChanged(int)), cudaWindow, SLOT(slotWindowSizeChanged(int)));
-	connect(m_varianceSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancChanged(double)));
+	connect(m_variancePosSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancPosChanged(double)));
+	connect(m_varianceColSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancColChanged(double)));
+	connect(m_varianceDepSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancDepChanged(double)));
 
     propertyEditor = new QtTreePropertyBrowser(dock);
     propertyEditor->setFactoryForManager(doubleManager, doubleSpinBoxFactory);

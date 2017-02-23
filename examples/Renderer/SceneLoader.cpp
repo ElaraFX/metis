@@ -360,6 +360,11 @@ void load_object(const char *filename)
 	std::cout << "Materials: " << materialNo << std::endl;
 }
 
+Vec3f degamma(float r, float g, float b)
+{
+	return Vec3f(powf(r, 2.2f), powf(g, 2.2f), powf(b, 2.2f));
+}
+
 void load_material(const char* strFileName)
 {
 	int index = 0;
@@ -401,11 +406,10 @@ void load_material(const char* strFileName)
         else if(0 == strcmp(strCommand, "Kd"))
         {
             // Âþ·´ÉäÏµÊý
+
             float r, g, b, average;
             InFile>>r>>g>>b;
-            pMaterial->m_ColorReflect.x = r;
-            pMaterial->m_ColorReflect.y = g;
-            pMaterial->m_ColorReflect.z = b;
+			pMaterial->m_ColorReflect = degamma(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ni"))
         {
@@ -428,9 +432,7 @@ void load_material(const char* strFileName)
 				g *= weight;
 				b *= weight;
 			}
-			pMaterial->m_SpecColorReflect.x = r;
-            pMaterial->m_SpecColorReflect.y = g;
-            pMaterial->m_SpecColorReflect.z = b;
+			pMaterial->m_SpecColorReflect = degamma(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ke"))
         {

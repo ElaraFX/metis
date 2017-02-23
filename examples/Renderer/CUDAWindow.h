@@ -36,9 +36,13 @@ protected:
     void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseMoveEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+	void keyPressEvent(QKeyEvent *) Q_DECL_OVERRIDE;
+
 public slots:
 	void slotWindowSizeChanged(int size);
-	void slotVariancChanged(double val);
+	void slotVariancPosChanged(double val);
+	void slotVariancColChanged(double val);
+	void slotVariancDepChanged(double val);
 
 private:
     GLuint m_posAttr;
@@ -94,5 +98,7 @@ private:
     QPoint lastPos;
 
 	int	m_windowSize;
-	float m_variance;
+	float m_variance_pos;
+	float m_variance_col;
+	float m_variance_dep;
 };
