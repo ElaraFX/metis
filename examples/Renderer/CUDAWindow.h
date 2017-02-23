@@ -70,7 +70,7 @@ private:
 	Vec3f* finaloutputbuffer; // stores averaged pixel samples
     float* depthbuffer; // stores ray intersect depth per pixel samples
     float* eyecosdepthbuffer; // stores ray intersect depth with eye ray cos per pixel samples
-    int* materialbuffer; // stores ray intersect material per pixel samples
+    float* materialbuffer; // stores ray intersect material per pixel samples
     float4* gpuHDRenv;
     Vec4f* cpuHDRenv;
     Vec4f* m_triNormals;
