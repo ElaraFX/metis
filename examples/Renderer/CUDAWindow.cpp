@@ -478,6 +478,7 @@ void TriangleWindow::paintGL()
 void TriangleWindow::mousePressEvent(QMouseEvent *event)
 {
     lastPos = event->pos();
+	setFocus();
 }
 
 void TriangleWindow::mouseMoveEvent(QMouseEvent *event)
@@ -529,8 +530,12 @@ void TriangleWindow::keyPressEvent(QKeyEvent *event)
     }
 	else if(event->key() == Qt::Key_Q) 
     {
+		interactiveCamera->changeAltitude(100);
+		buffer_reset = true;
     }
 	else if(event->key() == Qt::Key_E) 
     {
+		interactiveCamera->changeAltitude(-100);
+		buffer_reset = true;
     }
 }
