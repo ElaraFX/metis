@@ -519,6 +519,8 @@ void TriangleWindow::keyPressEvent(QKeyEvent *event)
     }
 	else if(event->key() == Qt::Key_A) 
     {
+		interactiveCamera->strafe(-200);
+		buffer_reset = true;
     }
 	else if(event->key() == Qt::Key_S) 
     {
@@ -527,6 +529,8 @@ void TriangleWindow::keyPressEvent(QKeyEvent *event)
     }
 	else if(event->key() == Qt::Key_D) 
     {
+		interactiveCamera->strafe(200);
+		buffer_reset = true;
     }
 	else if(event->key() == Qt::Key_Q) 
     {
