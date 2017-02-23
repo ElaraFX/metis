@@ -274,7 +274,7 @@ void TriangleWindow::initCUDAscenedata()
     cudaMalloc(&normalbuffer, width() * height() * sizeof(Vec3f));
     cudaMalloc(&depthbuffer, width() * height() * sizeof(float));
     cudaMalloc(&eyecosdepthbuffer, width() * height() * sizeof(float));
-    cudaMalloc(&materialbuffer, width() * height() * sizeof(int));
+    cudaMalloc(&materialbuffer, width() * height() * sizeof(float));
 
     // allocate GPU memory for interactive camera
     cudaMalloc((void**)&cudaRendercam, sizeof(Camera));
