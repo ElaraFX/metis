@@ -1191,7 +1191,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	depthbuffer[i] = depthbuffer[i] * (framenumber - 1) / framenumber + depth / framenumber;
 	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
 	eyecosdepthbuffer[i] = eyecosdepthbuffer[i] * (framenumber - 1) / framenumber + eyecosdepth / framenumber;
-	materialbuffer[i] = materialID;
+	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;;
 }
 
 __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
@@ -1229,7 +1229,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 				weight = /*((abs(eyecosdepthbuffer[i] - eyecosdepthbuffer[index]) < 0.001f) ? 1.0f : 
 					exp(-(depthbuffer[i] - depthbuffer[index]) * (depthbuffer[i] - depthbuffer[index]) / (2.0f * dep_variance))) **/	
 					max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
-					(!(materialbuffer[i] - materialbuffer[index]) ? 1.0f : 0.0f) *		
+					(abs(materialbuffer[i] - materialbuffer[index]) < 0.01f ? 1.0f : 0.0f) *		
 					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
 					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
 
