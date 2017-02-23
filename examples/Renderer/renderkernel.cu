@@ -1185,13 +1185,13 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 	Vec3f colour = tempcol;
 	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	//fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-	//									(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
 
-		fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-										(unsigned char)(colour.y* 255), 
-										(unsigned char)(colour.z* 255), 1);
+		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
+		//								(unsigned char)(colour.y* 255), 
+		//								(unsigned char)(colour.z* 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);
