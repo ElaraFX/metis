@@ -62,6 +62,9 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_interval = 64;
 	m_firsttime = true;
 
+	m_windowSize = 10;
+	m_variance = 1000;
+
 	mtlfile = "data/class1.mtl";
     scenefile = "data/class1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
@@ -131,13 +134,22 @@ void TriangleWindow::ProfilerBegin() {
 	QueryPerformanceCounter(&m_t1);
 }
 
-void TriangleWindow::ProfilerEnd(int numRays) {
+void TriangleWindow::ProfilerEnd(long long int numRays) {
 	double dff = m_tc.QuadPart;
 	QueryPerformanceCounter(&m_t2);
 	double s = (m_t2.QuadPart - m_t1.QuadPart) / dff;
 	printf("render time is %.3fs\n", s);
-	int rayPerSecond = numRays / s;
-	printf("path per second %d rays/s\n", rayPerSecond);
+	long long int rayPerSecond = numRays / s;
+	printf("path per second %lld rays/s\n", rayPerSecond);
+}
+
+void TriangleWindow::slotWindowSizeChanged(int size){
+	m_windowSize = size;
+	buffer_reset = true;
+}
+void TriangleWindow::slotVariancChanged(double val){
+	m_variance = val;
+	buffer_reset = true;
 }
 
 void TriangleWindow::createVBO(GLuint* vbo)
@@ -443,7 +455,7 @@ void TriangleWindow::paintGL()
 	if(framenumber % m_interval == 0){
 		const int depth = 4;
 		const int samp = 1;
-		int numRays = width() * height() * depth * samp * framenumber;
+		long long int numRays = (long long)width() * (long long)height() * (long long)(depth * samp * framenumber);
 		ProfilerEnd(numRays);
 	}
 	

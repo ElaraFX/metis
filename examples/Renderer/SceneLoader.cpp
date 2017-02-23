@@ -419,6 +419,15 @@ void load_material(const char* strFileName)
             // 镜面反射系数
             float r, g, b, average;
             InFile>>r>>g>>b;
+			float maxcolor = std::max(r, g);
+			maxcolor = std::max(maxcolor, b);
+			if (maxcolor > 1.0f)
+			{
+				float weight = 1.0f / maxcolor;
+				r *= weight;
+				g *= weight;
+				b *= weight;
+			}
 			pMaterial->m_SpecColorReflect.x = r;
             pMaterial->m_SpecColorReflect.y = g;
             pMaterial->m_SpecColorReflect.z = b;

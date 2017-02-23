@@ -45,6 +45,8 @@
 #include "qtcanvas.h"
 
 class TriangleWindow;
+class QSpinBox;
+class QDoubleSpinBox;
 
 class QtProperty;
 
@@ -117,6 +119,10 @@ private:
     TriangleWindow *cudaWindow;
     QtCanvasItem *currentItem;
     QToolBar* fileToolBar;
+
+	QSpinBox* m_filterSizeSpin;
+	QDoubleSpinBox* m_varianceSpin;
+
     QMap<QtProperty *, QString> propertyToId;
     QMap<QString, QtProperty *> idToProperty;
     QMap<QString, bool> idToExpanded;
