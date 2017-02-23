@@ -41,6 +41,10 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     hostRendercam = NULL;
     accumulatebuffer = NULL; // image buffer storing accumulated pixel samples
     finaloutputbuffer = NULL; // stores averaged pixel samples
+	depthbuffer = NULL;
+	eyecosdepthbuffer = NULL;
+	normalbuffer = NULL;
+	materialbuffer = NULL;
     gpuHDRenv = NULL;
     cpuHDRenv = NULL;
     m_triNormals = NULL;
@@ -255,6 +259,10 @@ void TriangleWindow::initCUDAscenedata()
 {
     // allocate GPU memory for accumulation buffer
     cudaMalloc(&accumulatebuffer, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&normalbuffer, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&depthbuffer, width() * height() * sizeof(float));
+    cudaMalloc(&eyecosdepthbuffer, width() * height() * sizeof(float));
+    cudaMalloc(&materialbuffer, width() * height() * sizeof(int));
 
     // allocate GPU memory for interactive camera
     cudaMalloc((void**)&cudaRendercam, sizeof(Camera));
@@ -349,6 +357,10 @@ void TriangleWindow::deleteCudaAndCpuMemory()
 	cudaFree(cudaMaterialsPtr);
     cudaFree(cudaRendercam);
     cudaFree(accumulatebuffer);
+    cudaFree(normalbuffer);
+    cudaFree(depthbuffer);
+    cudaFree(eyecosdepthbuffer);
+    cudaFree(materialbuffer);
     cudaFree(finaloutputbuffer);
     cudaFree(gpuHDRenv);
 
@@ -378,6 +390,26 @@ void TriangleWindow::paintGL()
 		framenumber = 0; 
 	}
 
+	if (buffer_reset){
+		cudaMemset(depthbuffer, 1, width() * height() * sizeof(float)); 
+		framenumber = 0; 
+	}
+
+	if (buffer_reset){
+		cudaMemset(eyecosdepthbuffer, 1, width() * height() * sizeof(float)); 
+		framenumber = 0; 
+	}
+
+	if (buffer_reset){
+		cudaMemset(materialbuffer, 1, width() * height() * sizeof(float)); 
+		framenumber = 0; 
+	}
+
+	if (buffer_reset){
+		cudaMemset(normalbuffer, 1, width() * height() * sizeof(Vec3f)); 
+		framenumber = 0; 
+	}
+
 	if(m_firsttime || buffer_reset)
 	{
 		m_firsttime = false;
@@ -403,7 +435,7 @@ void TriangleWindow::paintGL()
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
     cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, finaloutputbuffer,
-        accumulatebuffer, gpuHDRenv, framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height());
+        accumulatebuffer, normalbuffer, depthbuffer, eyecosdepthbuffer, materialbuffer, gpuHDRenv, framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height());
 
     cudaThreadSynchronize();
     cudaGLUnmapBufferObject(m_vbo);

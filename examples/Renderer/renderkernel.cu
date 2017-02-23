@@ -727,7 +727,7 @@ union Colour  // 4 bytes = 4 chars = 1 float
 	uchar4 components;
 };
 
-__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
+__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *depth, float *eyecosdepth, int *materialID, const float4* gpuNodes, const float4* gpuTriWoops, 
 	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
@@ -801,26 +801,27 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 			//		vec2 longlat = vec2(atan(dir.y, dir.x) + RotateMap, acos(dir.z));
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
-			// Convert (normalized) dir to spherical coordinates.
-			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			
-			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			float offsetY = 0.5f;
-			float u = longlatX / TWO_PI; // +offsetY;
-			float v = longlatY / M_PI ; 
+			//// Convert (normalized) dir to spherical coordinates.
+			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			//
+			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			//float offsetY = 0.5f;
+			//float u = longlatX / TWO_PI; // +offsetY;
+			//float v = longlatY / M_PI ; 
 
-			// map u, v to integer coordinates
-			int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			int v2 = (int)(v * HDRheight); // % HDRheight;
+			//// map u, v to integer coordinates
+			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * HDRheight); // % HDRheight;
 
-			// compute the texel index in the HDR map 
-			int HDRtexelidx = u2 + v2 * HDRwidth;
+			//// compute the texel index in the HDR map 
+			//int HDRtexelidx = u2 + v2 * HDRwidth;
 
-			//float4 HDRcol = HDRmap[HDRtexelidx];
-			float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			////float4 HDRcol = HDRmap[HDRtexelidx];
+			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			Vec3f HDRcol2 = Vec3f(2.5f, 2.5f, 2.5f);
 
 			emit = HDRcol2 * 2.0f;
 			accucolor += (mask * emit); 
@@ -845,6 +846,15 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 			objcol = colour;
 			emit = Vec3f(0.0, 0.0, 0);  // object emission
 			accucolor += (mask * emit);
+		}
+
+		// get information for denoise
+		if (bounces == 0)
+		{
+			*normal = Vec3f(n.x, n.y, n.z);
+			*depth = hitDistance;
+			*eyecosdepth = - hitDistance * abs(dot(*normal, raydir.normalize()));
+			*materialID = hitMaterial;
 		}
 
 		// basic material system, all parameters are hard-coded (such as phong exponent, index of refraction)
@@ -1074,13 +1084,17 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, cons
 	return accucolor;
 }
 
-__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
+__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
 	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
 	unsigned int tricount, const Camera* cudaRendercam) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+	float depth;
+	Vec3f normal = Vec3f(0, 0, 0);
+	int materialID;
+	float eyecosdepth;
 
 	// global threadId, see richiesams blogspot
 	int threadId = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
@@ -1165,15 +1179,70 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, const float
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats,
+		finalcol += renderKernel(&randState, HDRmap, &normal, &depth, &eyecosdepth, &materialID, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats,
 				originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
 	// add pixel colour to accumulation buffer (accumulates all samples) 
 	accumbuffer[i] += finalcol;
+
+	// get depth and normal
+	//depthbuffer[i] = depth;
+	depthbuffer[i] = depthbuffer[i] * (framenumber - 1) / framenumber + depth / framenumber;
+	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
+	eyecosdepthbuffer[i] = eyecosdepthbuffer[i] * (framenumber - 1) / framenumber + eyecosdepth / framenumber;
+	materialbuffer[i] = materialID;
+}
+
+__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber) 
+{
+	// assign a CUDA thread to every pixel by using the threadIndex
+	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
 	
+	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
+	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
+	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
+	if (x > cudaRenderCam->resolution.x / 2)
+	//if (framenumber < 1)
+	{
+		ret_colour = accumbuffer[i];
+	}
+	else
+	{
+		float weight_total = 0;
+		int index;
+		float weight;
+		int filter_window = 10;
+		float pos_variance = 100.0f;
+		float col_variance = 20.0f;
+		float dep_variance = 100.0f;
+		for (int m = -filter_window; m <= filter_window; m++)
+		{
+			for (int n = -filter_window; n <= filter_window; n++)
+			{
+				int index_y = cudaRenderCam->resolution.y - y - n - 1;
+				int index_x = m + x;
+				if ((index_x < 0 || index_x >= cudaRenderCam->resolution.x || index_y < 0 || index_y >= cudaRenderCam->resolution.y))
+					continue;
+				index = index_y * cudaRenderCam->resolution.x + index_x;
+				weight = /*((abs(eyecosdepthbuffer[i] - eyecosdepthbuffer[index]) < 0.001f) ? 1.0f : 
+					exp(-(depthbuffer[i] - depthbuffer[index]) * (depthbuffer[i] - depthbuffer[index]) / (2.0f * dep_variance))) **/	
+					//max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
+					(!(materialbuffer[i] - materialbuffer[index]) ? 1.0f : 0.0f) *		
+					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
+					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
+
+				weight_total += weight;
+				ret_colour += accumbuffer[index] * weight;
+			}
+		}
+		ret_colour /= weight_total;
+		//ret_colour = Vec3f(float(materialbuffer[i] % 10) / 10.0f, 0, 0) * framenumber;
+	}
 	// averaged colour: divide colour by the number of calculated frames so far
-	Vec3f tempcol = accumbuffer[i] / framenumber;
+	//accumbuffer[i] = ret_colour;
+	Vec3f tempcol = ret_colour / framenumber;
 
 	tempcol *= 8.0f;
 
@@ -1201,7 +1270,7 @@ bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
 void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats,
-	Vec3f* outputbuf, Vec3f* accumbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
+	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
 	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h){
 
 	if (firstTime) {
@@ -1234,7 +1303,10 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
 	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
-	PathTracingKernel << <grid, block >> >(outputbuf, accumbuf, HDRmap, nodes, triWoops, debugTris, 
+
+	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
 		triInds, mats, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
+	cudaThreadSynchronize();
+	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber);
 }
