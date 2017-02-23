@@ -15,6 +15,7 @@ class CudaBVH;
 //! [1]
 class TriangleWindow : public QOpenGLWidget, protected QOpenGLFunctions
 {
+	Q_OBJECT
 public:
     TriangleWindow(QWidget *parent = 0);
     void createVBO(GLuint* vbo);
@@ -35,6 +36,9 @@ protected:
     void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseMoveEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
     void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+public slots:
+	void slotWindowSizeChanged(int size);
+	void slotVariancChanged(double val);
 
 private:
     GLuint m_posAttr;
@@ -84,4 +88,7 @@ private:
 	LARGE_INTEGER	m_t1, m_t2, m_tc;
 
     QPoint lastPos;
+
+	int	m_windowSize;
+	float m_variance;
 };

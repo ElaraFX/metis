@@ -58,6 +58,9 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_interval = 64;
 	m_firsttime = true;
 
+	m_windowSize = 10;
+	m_variance = 1000;
+
 	mtlfile = "data/teapot1.mtl";
     scenefile = "data/teapot1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
@@ -134,6 +137,15 @@ void TriangleWindow::ProfilerEnd(long long int numRays) {
 	printf("render time is %.3fs\n", s);
 	long long int rayPerSecond = numRays / s;
 	printf("path per second %lld rays/s\n", rayPerSecond);
+}
+
+void TriangleWindow::slotWindowSizeChanged(int size){
+	m_windowSize = size;
+	buffer_reset = true;
+}
+void TriangleWindow::slotVariancChanged(double val){
+	m_variance = val;
+	buffer_reset = true;
 }
 
 void TriangleWindow::createVBO(GLuint* vbo)

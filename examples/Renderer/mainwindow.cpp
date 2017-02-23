@@ -48,6 +48,7 @@
 #include <QAction>
 #include <QDockWidget>
 #include <QToolBar>
+#include <qspinbox.h>
 
 #include "CUDAWindow.h"
 
@@ -166,6 +167,17 @@ MainWindow::MainWindow(QWidget *parent)
 
     QDockWidget *dock = new QDockWidget(this);
     addDockWidget(Qt::RightDockWidgetArea, dock);
+
+	m_filterSizeSpin = new QSpinBox();
+	m_varianceSpin = new QDoubleSpinBox();
+	fileToolBar->addWidget(m_filterSizeSpin);
+	fileToolBar->addWidget(m_varianceSpin);
+
+	m_filterSizeSpin->setValue(10);
+	m_varianceSpin->setRange(0, 9999999);
+	m_varianceSpin->setValue(1000);
+	connect(m_filterSizeSpin, SIGNAL(valueChanged(int)), cudaWindow, SLOT(slotWindowSizeChanged(int)));
+	connect(m_varianceSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancChanged(double)));
 
     propertyEditor = new QtTreePropertyBrowser(dock);
     propertyEditor->setFactoryForManager(doubleManager, doubleSpinBoxFactory);
