@@ -63,7 +63,9 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_firsttime = true;
 
 	m_windowSize = 10;
-	m_variance = 1000;
+	m_variance_pos = 1000;
+	m_variance_col = 1000;
+	m_variance_dep = 1000;
 
 	mtlfile = "data/class1.mtl";
     scenefile = "data/class1.obj"; 
@@ -147,8 +149,18 @@ void TriangleWindow::slotWindowSizeChanged(int size){
 	m_windowSize = size;
 	buffer_reset = true;
 }
-void TriangleWindow::slotVariancChanged(double val){
-	m_variance = val;
+void TriangleWindow::slotVariancPosChanged(double val){
+	m_variance_pos = val;
+	buffer_reset = true;
+}
+
+void TriangleWindow::slotVariancColChanged(double val){
+	m_variance_col = val;
+	buffer_reset = true;
+}
+
+void TriangleWindow::slotVariancDepChanged(double val){
+	m_variance_dep = val;
 	buffer_reset = true;
 }
 
@@ -435,7 +447,8 @@ void TriangleWindow::paintGL()
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
     cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, finaloutputbuffer,
-        accumulatebuffer, normalbuffer, depthbuffer, eyecosdepthbuffer, materialbuffer, gpuHDRenv, framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height());
+        accumulatebuffer, normalbuffer, depthbuffer, eyecosdepthbuffer, materialbuffer, gpuHDRenv, 
+		framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height(), m_windowSize, m_variance_pos, m_variance_col, m_variance_dep );
 
     cudaThreadSynchronize();
     cudaGLUnmapBufferObject(m_vbo);

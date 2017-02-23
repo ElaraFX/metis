@@ -1194,7 +1194,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	materialbuffer[i] = materialID;
 }
 
-__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber) 
+__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
@@ -1213,10 +1213,10 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 		float weight_total = 0;
 		int index;
 		float weight;
-		int filter_window = 10;
-		float pos_variance = 100.0f;
-		float col_variance = 20.0f;
-		float dep_variance = 100.0f;
+		int filter_window = winSize;
+		float pos_variance = pos_var;
+		float col_variance = col_var;
+		float dep_variance = dep_var;
 		for (int m = -filter_window; m <= filter_window; m++)
 		{
 			for (int n = -filter_window; n <= filter_window; n++)
@@ -1271,7 +1271,7 @@ bool firstTime = true;
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
 void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats,
 	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, int* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h){
+	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var){
 
 	if (firstTime) {
 		// if this is the first time cudarender() is called,
@@ -1308,5 +1308,5 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 		triInds, mats, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
-	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber);
+	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);
 }

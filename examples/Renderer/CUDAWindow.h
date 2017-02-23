@@ -40,7 +40,9 @@ protected:
 
 public slots:
 	void slotWindowSizeChanged(int size);
-	void slotVariancChanged(double val);
+	void slotVariancPosChanged(double val);
+	void slotVariancColChanged(double val);
+	void slotVariancDepChanged(double val);
 
 private:
     GLuint m_posAttr;
@@ -96,5 +98,7 @@ private:
     QPoint lastPos;
 
 	int	m_windowSize;
-	float m_variance;
+	float m_variance_pos;
+	float m_variance_col;
+	float m_variance_dep;
 };

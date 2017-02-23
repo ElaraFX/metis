@@ -121,7 +121,9 @@ private:
     QToolBar* fileToolBar;
 
 	QSpinBox* m_filterSizeSpin;
-	QDoubleSpinBox* m_varianceSpin;
+	QDoubleSpinBox* m_variancePosSpin;
+	QDoubleSpinBox* m_varianceColSpin;
+	QDoubleSpinBox* m_varianceDepSpin;
 
     QMap<QtProperty *, QString> propertyToId;
     QMap<QString, QtProperty *> idToProperty;
