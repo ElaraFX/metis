@@ -11,6 +11,7 @@
 
 class Camera;
 class CudaBVH;
+struct TextureCUDA;
 
 //! [1]
 class TriangleWindow : public QOpenGLWidget, protected QOpenGLFunctions
@@ -28,6 +29,7 @@ public:
 
 	void ProfilerBegin();
 	void ProfilerEnd(long long int numRays);
+	~TriangleWindow();
 
 protected:
     void initializeGL() Q_DECL_OVERRIDE;
@@ -54,14 +56,17 @@ private:
     Vec4i* cpuTriWoopPtr;
     Vec4i* cpuTriDebugPtr;
     Vec4f* cpuTriNormalPtr;
+    Vec4f* cpuTriUVPtr;
     S32*   cpuTriIndicesPtr;
 
     float4* cudaNodePtr;
     float4* cudaTriWoopPtr;
     float4* cudaTriDebugPtr;
+    float4* cudaTriUVPtr;
     float4* cudaTriNormalPtr;
     S32*    cudaTriIndicesPtr;
 	MaterialCUDA* cudaMaterialsPtr;
+	TextureCUDA* cudaTexturePtr;
 
     Camera* cudaRendercam;
     Camera* hostRendercam;
@@ -82,6 +87,7 @@ private:
     int triangle_count;
     int triWoopSize;
     int triDebugSize;
+    int triUVSize;
     int triIndicesSize;
     float scalefactor;
     bool nocachedBVH;

@@ -99,6 +99,7 @@ CudaBVH& CudaBVH::operator=(CudaBVH& other)
 		m_nodes = other.m_nodes;
 		m_triWoop = other.m_triWoop;
 		m_triIndex = other.m_triIndex;
+		m_triUV = other.m_triUV;
 	}
 	return *this;
 }
@@ -125,6 +126,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 	Array<Vec4i> nodeData(NULL, 4); 
 	Array<Vec4i> triWoopData;
 	Array<Vec4i> triDebugData; // array for regular (non-woop) triangles
+	Array<Vec4f> triUVData;
 	Array<S32> triIndexData;
 
 	// construct a stack (array of stack entries) to help in filling the data arrays
@@ -186,6 +188,8 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 				triWoopData.add((Vec4i*)m_normaltri, 3);  
 				
 				triDebugData.add((Vec4i*)m_debugtri, 3);  
+				
+				triUVData.add((Vec4f*)m_uvtri, 3);  
 
 				// add tri index for current triangle to triIndexData	
 				triIndexData.add(bvh.getTriIndices()[j]); 
@@ -196,6 +200,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 			// Leaf node terminator to indicate end of leaf, stores hexadecimal value 0x80000000 (= 2147483648 in decimal)
 			triWoopData.add(0x80000000); // leafnode terminator code indicates the last triangle of the leaf node
 			triDebugData.add(0x80000000); 
+			triUVData.add(0x80000000);
 			
 			// add extra zero to triangle indices array to indicate end of leaf
 			triIndexData.add(0);  // terminates triIndexdata for current leaf
@@ -250,6 +255,16 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 		m_debugTri[i].w = triDebugData.get(i).w; 
 	}
 
+	m_UVTri = (Vec4f*)malloc(triDebugData.getSize() * sizeof(Vec4f));
+	m_UVTriSize = triUVData.getSize();
+
+	for (int i = 0; i < triUVData.getSize(); i++){
+		m_UVTri[i].x = triUVData.get(i).x;
+		m_UVTri[i].y = triUVData.get(i).y;
+		m_UVTri[i].z = triUVData.get(i).z;
+		m_UVTri[i].w = triUVData.get(i).w; 
+	}
+
 	m_gpuTriIndices = (S32*) malloc(triIndexData.getSize() * sizeof(S32));
 	m_gpuTriIndicesSize = triIndexData.getSize();
 
@@ -267,6 +282,7 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
 	// fetch the 3 vertex indices of this triangle
 	const Vec3i& vtxInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).verticeIndex;
     const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).normalIndex;
+    const Vec3i& uvInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).uvIndex;
 	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
     //const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).vertices; 
 	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
@@ -280,6 +296,12 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     const Vec3f& n1 = Vec3f(normals[norInds._v[1]].x, normals[norInds._v[1]].y, normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
     //const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
     const Vec3f& n2 = Vec3f(normals[norInds._v[2]].x, normals[norInds._v[2]].y, normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+	
+    const Vec3f& uv0 = Vec3f(uvs[uvInds._v[0]].x, uvs[uvInds._v[0]].y, uvs[uvInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+    //const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
+    const Vec3f& uv1 = Vec3f(uvs[uvInds._v[1]].x, uvs[uvInds._v[1]].y, uvs[uvInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+    //const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
+    const Vec3f& uv2 = Vec3f(uvs[uvInds._v[2]].x, uvs[uvInds._v[2]].y, uvs[uvInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
 	// regular triangles (for debugging only)
 	m_debugtri[0] = Vec4f(v0.x, v0.y, v0.z, 0.0f);
@@ -289,6 +311,10 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     m_normaltri[0] = Vec4f(n0.x, n0.y, n0.z, 0.0f);
     m_normaltri[1] = Vec4f(n1.x, n1.y, n1.z, 0.0f);
     m_normaltri[2] = Vec4f(n2.x, n2.y, n2.z, 0.0f);
+
+	m_uvtri[0] = Vec4f(uv0.x, uv0.y, uv0.z, 0.0f);
+	m_uvtri[1] = Vec4f(uv1.x, uv1.y, uv1.z, 0.0f);
+	m_uvtri[2] = Vec4f(uv2.x, uv2.y, uv2.z, 0.0f);
 
 	m_materialIndex = matInds;
 

@@ -16,6 +16,7 @@ MMaterial::MMaterial()
 	m_glossiness = 0;
 	m_ior = 1.5;
 	m_index = 0;
+	m_pTexture = NULL;
 }
 
 MMaterial::~MMaterial()

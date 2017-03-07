@@ -17,16 +17,21 @@
 #include "Geometry.h"
 #include "SceneLoader.h"
 
+
 using std::string;
 
 unsigned verticesNo = 0;
 unsigned normalsNo = 0;
 unsigned trianglesNo = 0;
 unsigned materialNo = 0;
+unsigned textureNo = 0;
+unsigned uvNo = 0;
 Vertex* vertices = NULL;   // vertex list
 Vec3f* normals = NULL;
+Vec3f* uvs = NULL;
 Triangle* triangles = NULL;  // triangle list
 MaterialCUDA* materials = NULL;
+TextureCUDA* textures = NULL;
 
 struct face {                  
 	std::vector<int> vertex;
@@ -67,11 +72,15 @@ struct TriangleMesh
 {
 	std::vector<Vec3f> verts;
     std::vector<Vec3f> nors;
+	std::vector<Vec3f> uvs;
+    std::vector<Vec3i> faceUvIndexs;
 	std::vector<Vec3i> faceVertIndexs;
     std::vector<Vec3i> faceNorIndexs;
 	std::vector<int> materialIndexs;
 	Vec3f bounding_box[2];   // mesh bounding box
 };
+
+TriangleMesh mesh;
 
 void load_object(const char *filename)
 {
@@ -103,10 +112,11 @@ void load_object(const char *filename)
 
 			Vertex *pCurrentVertex = NULL;
             Vec3f *pCurrentNormal = NULL;
+			Vec3f *pCurrentUV = NULL;
 			Triangle *pCurrentTriangle = NULL;
 			MaterialCUDA *pCurrentMaterial = NULL;
-			unsigned totalVertices, totalNormals, totalTriangles = 0, totalMaterials;
-			TriangleMesh mesh;
+			TextureCUDA *pCurrentTexture = NULL;
+			unsigned totalVertices, totalNormals, totalUVs, totalTriangles = 0, totalMaterials, totalTextures;
 					
 			std::ifstream ifs(filenamestring.c_str(), std::ifstream::in);
 
@@ -182,11 +192,11 @@ void load_object(const char *filename)
 				    //parameters.push_back(tempparameters);
 			    }
 			    else if (key == "vt") { // texture coordinate
-				    float x;
+				    float x, y;
 				    // std::vector<float> temptexcoords;
 				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws;
-					    // temptexcoords.push_back(x);
+					    stringstream >> x >> std::ws >> y >> std::ws;
+					    mesh.uvs.push_back(Vec3f(x, y, 0));
 				    }
 				    //texcoords.push_back(temptexcoords);
 			    }
@@ -231,6 +241,7 @@ void load_object(const char *filename)
 			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
 			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
                     mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
+					mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
 					mesh.materialIndexs.push_back(curMaterialIndex);
 			    }
 
@@ -247,8 +258,10 @@ void load_object(const char *filename)
 
 			totalVertices = mesh.verts.size();
             totalNormals = mesh.nors.size();
+            totalUVs = mesh.uvs.size();
 			totalTriangles = mesh.faceVertIndexs.size();
 			totalMaterials = g_MaterialContainer.arrayMaterial.size() + 1;
+			totalTextures = g_TextureContainer.arrayTexture.size();
 
 			vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
 			verticesNo = totalVertices;
@@ -266,6 +279,9 @@ void load_object(const char *filename)
 			materialNo = totalMaterials;
 			pCurrentMaterial = materials;
 
+			textures = (TextureCUDA*)malloc(totalTextures*sizeof(TextureCUDA));
+			textureNo = totalTextures;
+			pCurrentTexture = textures;
 
 			std::cout << "total vertices: " << totalVertices << "\n";
             std::cout << "total normals: " << totalNormals << "\n";
@@ -291,6 +307,24 @@ void load_object(const char *filename)
                 pCurrentNormal++;
             }
 
+			for (int i = 0; i < totalUVs; i++){
+                Vec3f currentuv = mesh.uvs[i];
+                pCurrentNormal->x = currentuv.x;
+                pCurrentNormal->y = currentuv.y;
+                pCurrentNormal->z = currentuv.z;
+
+                pCurrentNormal++;
+            }
+
+			for (int i = 0; i < textureNo; i++){
+				Texture *currenttex = g_TextureContainer.arrayTexture[i];
+
+				pCurrentTexture->texels = currenttex->m_Bitmap;
+				pCurrentTexture->height = currenttex->GetHeight();
+				pCurrentTexture->width = currenttex->GetWidth();
+                pCurrentTexture++;
+            }
+
 			for (int i = 0; i < materialNo; i++){
 				if(i == 0)
 				{
@@ -299,6 +333,7 @@ void load_object(const char *filename)
 					pCurrentMaterial->m_transparencyRate = 0;
 					pCurrentMaterial->m_glossiness = 0;
 					pCurrentMaterial->m_ior = 0;
+					pCurrentMaterial->m_textureIndex = -1;
 				}
 				else
 				{
@@ -309,11 +344,17 @@ void load_object(const char *filename)
 					pCurrentMaterial->m_transparencyRate = currentmat->m_transparencyRate;
 					pCurrentMaterial->m_glossiness = currentmat->m_glossiness;
 					pCurrentMaterial->m_ior = currentmat->m_ior;
+					if (currentmat->m_pTexture)
+					{
+						pCurrentMaterial->m_textureIndex = currentmat->m_pTexture->m_index;
+					}
+					else
+					{
+						pCurrentMaterial->m_textureIndex = -1;
+					}
 				}
                 pCurrentMaterial++;
             }
-
-
             std::cout << "Normals loaded\n";
 
 //			for (int i = 0; i < totalTriangles; i++)
@@ -323,12 +364,17 @@ void load_object(const char *filename)
 				
 				Vec3i currentfaceinds = mesh.faceVertIndexs[totalTriangles];
                 Vec3i currentnorminds = mesh.faceNorIndexs[totalTriangles];
+                Vec3i currentuvs = mesh.faceUvIndexs[totalTriangles];
 
 				pCurrentTriangle->m_idx = mesh.materialIndexs[totalTriangles];
 
 				pCurrentTriangle->v_idx1 = currentfaceinds.x - 1;
 				pCurrentTriangle->v_idx2 = currentfaceinds.y - 1;
 				pCurrentTriangle->v_idx3 = currentfaceinds.z - 1;
+
+				pCurrentTriangle->uv_idx1 = currentuvs.x;
+				pCurrentTriangle->uv_idx2 = currentuvs.y;
+				pCurrentTriangle->uv_idx3 = currentuvs.z;
 
                 pCurrentTriangle->n_idx1 = currentnorminds.x;
                 pCurrentTriangle->n_idx2 = currentnorminds.y;
@@ -354,10 +400,11 @@ void load_object(const char *filename)
 	else
 		panic("No extension in filename (only .ply accepted)");
 
-	std::cout << "Vertices:  " << verticesNo << std::endl;
+	/*std::cout << "Vertices:  " << verticesNo << std::endl;
     std::cout << "Normals:  " << normalsNo << std::endl;
 	std::cout << "Triangles: " << trianglesNo << std::endl;
 	std::cout << "Materials: " << materialNo << std::endl;
+	std::cout << "Textures: " << textureNo << std::endl;*/
 }
 
 Vec3f degamma(float r, float g, float b)
@@ -367,7 +414,7 @@ Vec3f degamma(float r, float g, float b)
 
 void load_material(const char* strFileName)
 {
-	int index = 0;
+	int index = 0, tex_index = 0;
     char strTexPath[MAX_PATH];
     char strCommand[256] = {0};
     std::ifstream InFile(strFileName);
@@ -459,6 +506,20 @@ void load_material(const char* strFileName)
             InFile>>nShininess;
 			pMaterial->m_glossiness = nShininess;
         }
+		else if(0 == strcmp(strCommand, "map_Kd"))
+        {
+            // 纹理
+            InFile>>strTexPath;
+			Texture *ptmp = g_TextureContainer.FindTexByName(strTexPath);
+			if (ptmp == NULL)
+			{
+				ptmp = new Texture(strTexPath, BITMAP24, 0);
+				ptmp->m_index = tex_index;
+				g_TextureContainer.AddTexture(ptmp);
+				tex_index++;
+			}
+			pMaterial->m_pTexture = ptmp;
+        }
         else if(0 == strcmp(strCommand, "illum"))
         {
             // 自发光暂时先不处理
@@ -488,7 +549,7 @@ float processgeo(){
 
 	// calculate min and max bounds of scene
 	// loop over all triangles in scene, grow minp and maxp
-	for (unsigned i = 0; i<trianglesNo; i++) {
+	for (unsigned i = 0; i < trianglesNo; i++) {
 
 		minp = min3f(minp, vertices[triangles[i].v_idx1]);
 		minp = min3f(minp, vertices[triangles[i].v_idx2]);
