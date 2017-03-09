@@ -284,23 +284,17 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).normalIndex;
     const Vec3i& uvInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).uvIndex;
 	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
-    //const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).vertices; 
+
 	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-	//const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
 	const Vec3f& v1 = Vec3f(vertices[vtxInds._v[1]].x, vertices[vtxInds._v[1]].y, vertices[vtxInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-	//const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
 	const Vec3f& v2 = Vec3f(vertices[vtxInds._v[2]].x, vertices[vtxInds._v[2]].y, vertices[vtxInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
     const Vec3f& n0 = Vec3f(normals[norInds._v[0]].x, normals[norInds._v[0]].y, normals[norInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-    //const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
     const Vec3f& n1 = Vec3f(normals[norInds._v[1]].x, normals[norInds._v[1]].y, normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-    //const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
     const Vec3f& n2 = Vec3f(normals[norInds._v[2]].x, normals[norInds._v[2]].y, normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 	
     const Vec3f& uv0 = Vec3f(uvs[uvInds._v[0]].x, uvs[uvInds._v[0]].y, uvs[uvInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-    //const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
     const Vec3f& uv1 = Vec3f(uvs[uvInds._v[1]].x, uvs[uvInds._v[1]].y, uvs[uvInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-    //const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
     const Vec3f& uv2 = Vec3f(uvs[uvInds._v[2]].x, uvs[uvInds._v[2]].y, uvs[uvInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
 	// regular triangles (for debugging only)

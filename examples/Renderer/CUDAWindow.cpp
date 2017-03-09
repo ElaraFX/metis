@@ -39,6 +39,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     cudaTriIndicesPtr = NULL;
 	cudaMaterialsPtr = NULL;
 	cudaTexturePtr = NULL;
+	cudaTextureData = NULL;
 
     cudaRendercam = NULL;
     hostRendercam = NULL;
@@ -70,8 +71,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_variance_col = 40;
 	m_variance_dep = 100;
 
-	mtlfile = "data/test1.mtl";
-    scenefile = "data/test1.obj"; 
+	mtlfile = "data/class1.mtl";
+    scenefile = "data/class1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -305,6 +306,12 @@ void TriangleWindow::initCUDAscenedata()
 	cudaMalloc((void**)&cudaTexturePtr, textureNo * sizeof(TextureCUDA));
     cudaMemcpy(cudaTexturePtr, textures, textureNo * sizeof(TextureCUDA), cudaMemcpyHostToDevice);
 
+	cudaMalloc((void**)&cudaTextureData, textotalsize * sizeof(float4));
+	for (int i = 0; i < textureNo; i++)
+	{
+		cudaMemcpy(cudaTextureData + textures[i].start_index, textures[i].texels, textures[i].height * textures[i].width * sizeof(float4), cudaMemcpyHostToDevice);
+	}
+
     std::cout << "Scene data copied to CUDA\n";
 }
 
@@ -353,8 +360,6 @@ void TriangleWindow::createBVH(){
     gpuBVH = new CudaBVH(myBVH, BVHLayout_Compact);  // Fermi BVH layout = compact. BVH layout for Kepler kernel Compact2
     std::cout << "CudaBVH successfully created\n";
 
-    std::cout << "Hi Sam!  How you doin'?" << std::endl;
-
     cpuNodePtr = gpuBVH->getGpuNodes();
     cpuTriWoopPtr = gpuBVH->getGpuTriWoop();
     cpuTriDebugPtr = gpuBVH->getDebugTri();
@@ -382,6 +387,7 @@ void TriangleWindow::deleteCudaAndCpuMemory()
     cudaFree(cudaTriIndicesPtr);
 	cudaFree(cudaMaterialsPtr);
 	cudaFree(cudaTexturePtr);
+	cudaFree(cudaTextureData);
     cudaFree(cudaRendercam);
     cudaFree(accumulatebuffer);
     cudaFree(normalbuffer);
@@ -462,7 +468,7 @@ void TriangleWindow::paintGL()
     unsigned int hashedframes = WangHash(framenumber);
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
-    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, cudaTexturePtr, finaloutputbuffer,
+    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, cudaTexturePtr, cudaTextureData, cudaTriUVPtr, finaloutputbuffer,
         accumulatebuffer, normalbuffer, depthbuffer, eyecosdepthbuffer, materialbuffer, gpuHDRenv, 
 		framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height(), m_windowSize, m_variance_pos, m_variance_col, m_variance_dep );
 

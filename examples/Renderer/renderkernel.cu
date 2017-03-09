@@ -428,9 +428,9 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 	hitdistance =  hitT;
 }
 
-__device__ Vec3f intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
+__device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
 	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices, 
-	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, int leafcount, int tricount, bool anyHit)
+	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, Vec3f& tribary, int leafcount, int tricount, bool anyHit)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	// global threadId, see richiesams blogspot
@@ -446,7 +446,6 @@ __device__ Vec3f intersectBVHandTriangles(const float4 rayorig, const float4 ray
 	// createCompact(bvh,1); for Compact
 
 	int traversalStack[STACK_SIZE];
-	Vec3f bary(0, 0, 0);
 	// Live state during traversal, stored in registers.
 
 	int		rayidx;		// not used, can be removed
@@ -462,6 +461,7 @@ __device__ Vec3f intersectBVHandTriangles(const float4 rayorig, const float4 ray
 	int     hitIndex;               // Triangle index of the closest intersection, -1 if none.
 	int		hitMat;
 	float   hitT;                   // t-value of the closest intersection.
+	Vec3f   bary(0, 0, 0);
 	// Kepler kernel only
 	//int     leafAddr2;              // Second postponed leaf, non-negative if none.  
 	//int     nodeAddr = EntrypointSentinel; // Non-negative: current internal node, negative: second postponed leaf.
@@ -678,21 +678,25 @@ __device__ Vec3f intersectBVHandTriangles(const float4 rayorig, const float4 ray
 				float t = bary.z; // hit distance along ray
 
 				if (t > tmin && t < hitT)   // if there is a miss, t will be larger than hitT (ray.tmax)
-					{								
-						hitIndex = triAddr;
-						hitT = t;  /// keeps track of closest hitpoint
+				{								
+					hitIndex = triAddr;
+					hitT = t;  /// keeps track of closest hitpoint
 
-						ng = cross(v0 - v1, v0 - v2);
-                        trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
-						trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
-						trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
+					ng = cross(v0 - v1, v0 - v2);
+                    trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
+					trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
+					trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
+
+					tribary.x = bary.x;
+					tribary.y = bary.y;
+					tribary.z = bary.z;
 						
-						if (anyHit)  // only true for shadow rays
-							{
-								nodeAddr = EntrypointSentinel;
-								break;
-							}
+					if (anyHit)  // only true for shadow rays
+					{
+						nodeAddr = EntrypointSentinel;
+						break;
 					}
+				}
 
 			} // triangle
 
@@ -721,7 +725,7 @@ __device__ Vec3f intersectBVHandTriangles(const float4 rayorig, const float4 ray
 	hitMaterial = hitMat;
 	hitdistance = hitT;
 
-	return bary;
+	return 0;
 }
 
 
@@ -732,8 +736,43 @@ union Colour  // 4 bytes = 4 chars = 1 float
 	uchar4 components;
 };
 
+__device__ Vec3f GetTexel(float a_U, float a_V, const TextureCUDA *cr, const float4 *texdata)
+{
+	// fetch a bilinearly filtered texel
+	Vec3f ret;
+	const float4 *texture = &texdata[cr->start_index];
+	a_U -= int(a_U);
+	a_V -= int(a_V);
+	if (a_U < 0) a_U += 1;
+	if (a_V < 0) a_V += 1;
+	float fu = a_U * (cr->width - 1);
+	float fv = a_V * (cr->height - 1);
+	int u1 = (int)fu;
+	int v1 = (int)fv;
+	int u2 = (u1 + 1) % cr->width;
+	int v2 = (v1 + 1) % cr->height;
+	// calculate fractional parts of u and v
+	float fracu = fu - floorf( fu );
+	float fracv = fv - floorf( fv );
+	// calculate weight factors
+	float w1 = (1 - fracu) * (1 - fracv);
+	float w2 = fracu * (1 - fracv);
+	float w3 = (1 - fracu) * fracv;
+	float w4 = fracu *  fracv;
+	// fetch four texels
+	float4 c1 = texture[u1 + v1 * cr->width];
+	float4 c2 = texture[u2 + v1 * cr->width];
+	float4 c3 = texture[u1 + v2 * cr->width];
+	float4 c4 = texture[u2 + v2 * cr->width];
+	// scale and sum the four colors
+	ret.x = c1.x * w1 + c2.x * w2 + c3.x * w3 + c4.x * w4;
+	ret.y = c1.y * w1 + c2.y * w2 + c3.y * w3 + c4.y * w4;
+	ret.z = c1.z * w1 + c2.z * w2 + c3.z * w3 + c4.z * w4;
+	return ret;
+}
+
 __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *depth, float *eyecosdepth, float *materialID, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
+	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
@@ -768,8 +807,9 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		//intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
 		//	gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
 
-		Vec3f bary = intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
-		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, leafcount, tricount, false);
+		Vec3f bary(0, 0, 0);
+		intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
+		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, bary, leafcount, tricount, false);
 
 
 		// intersect all spheres in the scene
@@ -806,28 +846,28 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
 			// Convert (normalized) dir to spherical coordinates.
-			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			
-			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			float offsetY = 0.5f;
-			float u = longlatX / TWO_PI; // +offsetY;
-			float v = longlatY / M_PI ; 
+			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			//
+			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			//float offsetY = 0.5f;
+			//float u = longlatX / TWO_PI; // +offsetY;
+			//float v = longlatY / M_PI ; 
 
-			// map u, v to integer coordinates
-			int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			int v2 = (int)(v * HDRheight); // % HDRheight;
+			//// map u, v to integer coordinates
+			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * HDRheight); // % HDRheight;
 
-			// compute the texel index in the HDR map 
-			int HDRtexelidx = u2 + v2 * HDRwidth;
-			//int index = u2 + v2 * g_texCuda.width;
+			//// compute the texel index in the HDR map 
+			//int HDRtexelidx = u2 + v2 * HDRwidth;
+			////int index = u2 + v2 * g_texCuda.width;
 
-			//float4 HDRcol = HDRmap[HDRtexelidx];
-			float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			//float4 HDRcol = g_texCuda.Fetch(index);
-			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			//Vec3f HDRcol2 = Vec3f(2.5f, 2.5f, 2.5f);
+			////float4 HDRcol = HDRmap[HDRtexelidx];
+			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			////float4 HDRcol = g_texCuda.Fetch(index);
+			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			Vec3f HDRcol2 = Vec3f(0.025f, 0.025f, 0.025f);
 
 			emit = HDRcol2 * 2.0f;
 			accucolor += (mask * emit); 
@@ -932,7 +972,14 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 					}
 					else
 					{
-
+						float tex_u, tex_v;
+						float4 uv0f = uv[bestTriIdx + 0];
+						float4 uv1f = uv[bestTriIdx + 1];
+						float4 uv2f = uv[bestTriIdx + 2];
+						tex_u = (1 - bary.y - bary.x) * uv0f.x + bary.x * uv1f.x + bary.y * uv2f.x;
+						tex_v = (1 - bary.y - bary.x) * uv0f.y + bary.x * uv1f.y + bary.y * uv2f.y;
+						Vec3f t = GetTexel(tex_u, tex_v, &tex[material.m_textureIndex], texdata);
+						mask *= t;
 					}
 
 					lastmaterialisdiffuse = true;
@@ -957,7 +1004,22 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 				hitpoint += nl * 0.001f;  // // scene size dependent
 
 				// multiply mask with colour of object
-				mask *= material.m_ColorReflect;
+				if (material.m_textureIndex == -1)
+				{
+					mask *= material.m_ColorReflect;
+				}
+				else
+				{
+					float tex_u, tex_v;
+					//printf("bestTriIdx: %d\n", bestTriIdx);
+					float4 uv0f = uv[bestTriIdx + 0];
+					float4 uv1f = uv[bestTriIdx + 1];
+					float4 uv2f = uv[bestTriIdx + 2];
+					tex_u = (1 - bary.y - bary.x) * uv0f.x + bary.x * uv1f.x + bary.y * uv2f.x;
+					tex_v = (1 - bary.y - bary.x) * uv0f.y + bary.x * uv1f.y + bary.y * uv2f.y;
+					Vec3f t = GetTexel(tex_u, tex_v, &tex[material.m_textureIndex], texdata);
+					mask *= t;
+				}
 
 				lastmaterialisdiffuse = true;
 			}
@@ -1028,7 +1090,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 }
 
 __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
+	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
 	unsigned int tricount, const Camera* cudaRendercam) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
@@ -1122,7 +1184,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, &normal, &depth, &eyecosdepth, &materialID, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats, tex,
+		finalcol += renderKernel(&randState, HDRmap, &normal, &depth, &eyecosdepth, &materialID, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats, tex, texdata, uv,
 				originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
@@ -1134,7 +1196,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	depthbuffer[i] = depthbuffer[i] * (framenumber - 1) / framenumber + depth / framenumber;
 	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
 	eyecosdepthbuffer[i] = eyecosdepthbuffer[i] * (framenumber - 1) / framenumber + eyecosdepth / framenumber;
-	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;;
+	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
 }
 
 __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
@@ -1212,7 +1274,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
-void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats, const TextureCUDA *tex,
+void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv,
 	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
 	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var){
 
@@ -1248,7 +1310,7 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
 
 	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
-		triInds, mats, tex, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
+		triInds, mats, tex, texdata, uv, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
 	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);

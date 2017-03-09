@@ -50,6 +50,7 @@ struct TextureCUDA
 {
 	int height;
 	int width;
+	int start_index;
 	Vec4f* texels;
 
 	TextureCUDA()

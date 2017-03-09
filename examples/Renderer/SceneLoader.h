@@ -11,6 +11,7 @@ extern unsigned verticesNo;
 extern unsigned normalsNo;
 extern unsigned materialNo;
 extern unsigned textureNo;
+extern unsigned textotalsize;
 extern unsigned uvNo;
 extern Vertex* vertices;
 extern Vec3f* normals;

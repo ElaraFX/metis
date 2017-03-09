@@ -67,6 +67,7 @@ private:
     S32*    cudaTriIndicesPtr;
 	MaterialCUDA* cudaMaterialsPtr;
 	TextureCUDA* cudaTexturePtr;
+	float4* cudaTextureData;
 
     Camera* cudaRendercam;
     Camera* hostRendercam;

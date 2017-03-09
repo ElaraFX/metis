@@ -25,6 +25,7 @@ unsigned normalsNo = 0;
 unsigned trianglesNo = 0;
 unsigned materialNo = 0;
 unsigned textureNo = 0;
+unsigned textotalsize = 0;
 unsigned uvNo = 0;
 Vertex* vertices = NULL;   // vertex list
 Vec3f* normals = NULL;
@@ -192,11 +193,11 @@ void load_object(const char *filename)
 				    //parameters.push_back(tempparameters);
 			    }
 			    else if (key == "vt") { // texture coordinate
-				    float x, y;
+				    float x, y, z;
 				    // std::vector<float> temptexcoords;
 				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws >> y >> std::ws;
-					    mesh.uvs.push_back(Vec3f(x, y, 0));
+					    stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
+					    mesh.uvs.push_back(Vec3f(x, y, z));
 				    }
 				    //texcoords.push_back(temptexcoords);
 			    }
@@ -241,7 +242,14 @@ void load_object(const char *filename)
 			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
 			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
                     mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
-					mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
+					if (f.texture.size() <= i + 2)
+					{
+						mesh.faceUvIndexs.push_back(Vec3i(0, 0, 0));
+					}
+					else
+					{
+						mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
+					}
 					mesh.materialIndexs.push_back(curMaterialIndex);
 			    }
 
@@ -283,6 +291,10 @@ void load_object(const char *filename)
 			textureNo = totalTextures;
 			pCurrentTexture = textures;
 
+			uvs = (Vec3f*)malloc(totalUVs*sizeof(Vec3f));
+            uvNo = totalUVs;
+            pCurrentUV = uvs;
+
 			std::cout << "total vertices: " << totalVertices << "\n";
             std::cout << "total normals: " << totalNormals << "\n";
 			std::cout << "total triangles: " << totalTriangles << "\n";
@@ -309,21 +321,25 @@ void load_object(const char *filename)
 
 			for (int i = 0; i < totalUVs; i++){
                 Vec3f currentuv = mesh.uvs[i];
-                pCurrentNormal->x = currentuv.x;
-                pCurrentNormal->y = currentuv.y;
-                pCurrentNormal->z = currentuv.z;
+                pCurrentUV->x = currentuv.x;
+                pCurrentUV->y = currentuv.y;
+                pCurrentUV->z = currentuv.z;
 
-                pCurrentNormal++;
+                pCurrentUV++;
             }
 
+			int start_index = 0;
 			for (int i = 0; i < textureNo; i++){
 				Texture *currenttex = g_TextureContainer.arrayTexture[i];
 
 				pCurrentTexture->texels = currenttex->m_Bitmap;
 				pCurrentTexture->height = currenttex->GetHeight();
 				pCurrentTexture->width = currenttex->GetWidth();
+				pCurrentTexture->start_index = start_index;
+				start_index += pCurrentTexture->height * pCurrentTexture->width;
                 pCurrentTexture++;
             }
+			textotalsize = start_index;
 
 			for (int i = 0; i < materialNo; i++){
 				if(i == 0)
@@ -400,11 +416,11 @@ void load_object(const char *filename)
 	else
 		panic("No extension in filename (only .ply accepted)");
 
-	/*std::cout << "Vertices:  " << verticesNo << std::endl;
+	std::cout << "Vertices:  " << verticesNo << std::endl;
     std::cout << "Normals:  " << normalsNo << std::endl;
 	std::cout << "Triangles: " << trianglesNo << std::endl;
 	std::cout << "Materials: " << materialNo << std::endl;
-	std::cout << "Textures: " << textureNo << std::endl;*/
+	std::cout << "Textures: " << textureNo << std::endl;
 }
 
 Vec3f degamma(float r, float g, float b)
@@ -514,11 +530,18 @@ void load_material(const char* strFileName)
 			if (ptmp == NULL)
 			{
 				ptmp = new Texture(strTexPath, BITMAP24, 0);
-				ptmp->m_index = tex_index;
-				g_TextureContainer.AddTexture(ptmp);
-				tex_index++;
+				if (ptmp->GetBitmap() != NULL)
+				{
+					ptmp->m_index = tex_index;
+					g_TextureContainer.AddTexture(ptmp);
+					tex_index++;
+					pMaterial->m_pTexture = ptmp;
+				}
 			}
-			pMaterial->m_pTexture = ptmp;
+			else
+			{
+				pMaterial->m_pTexture = ptmp;
+			}
         }
         else if(0 == strcmp(strCommand, "illum"))
         {

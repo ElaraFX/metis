@@ -104,6 +104,7 @@ void Texture::LoadTexture(char* a_File, IMAGETYPE type)
 
 Texture::Texture(char* a_File, IMAGETYPE type, int textype)
 {
+	m_Bitmap = NULL;
 	LoadTexture(a_File, type);
 	m_Textype = textype;
 }
