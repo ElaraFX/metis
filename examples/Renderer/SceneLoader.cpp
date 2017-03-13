@@ -420,6 +420,7 @@ void load_object(const char *filename)
     std::cout << "Normals:  " << normalsNo << std::endl;
 	std::cout << "Triangles: " << trianglesNo << std::endl;
 	std::cout << "Materials: " << materialNo << std::endl;
+	std::cout << "UVs: " << uvNo << std::endl;
 	std::cout << "Textures: " << textureNo << std::endl;
 }
 

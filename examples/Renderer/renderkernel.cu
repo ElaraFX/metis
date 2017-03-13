@@ -66,25 +66,6 @@ struct Sphere {
 	}
 };
 
-__constant__ Sphere spheres[] = {
-	// sun
-	//{ 10000, { 50.0f, 40.8f, -1060 }, { 0.3, 0.3, 0.3 }, { 0.175f, 0.175f, 0.25f }, DIFF }, // sky   0.003, 0.003, 0.003	
-	//{ 4.5, { 0.0f, 12.5, 0 }, { 6, 4, 1 }, { .6f, .6f, 0.6f }, DIFF },  /// lightsource	
-	//{ 10000.02, { 50.0f, -10001.35, 0 }, { 0.0, 0.0, 0 }, { 0.3f, 0.3f, 0.3f }, DIFF }, // ground  300/-301.0
-	//{ 10000, { 50.0f, -10000.1, 0 }, { 0, 0, 0 }, { 0.3f, 0.3f, 0.3f }, DIFF }, // double shell to prevent light leaking
-	//{ 110000, { 50.0f, -110048.5, 0 }, { 3.6, 2.0, 0.2 }, { 0.f, 0.f, 0.f }, DIFF },  // horizon brightener
-	
-	//{ 0.5, { 30.0f, 180.5, 42 }, { 0, 0, 0 }, { .6f, .6f, 0.6f }, DIFF },  // small sphere 1  
-	//{ 0.8, { 2.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, SPEC },  // small sphere 2
-	//{ 0.8, { -3.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.0f, 0.0f, 0.2f }, COAT },  // small sphere 2
-	{ 0.008, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
-	//{ 0.6, { -10.0f, -2.f, 1.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, DIFF },  // small sphere 2
-	//{ 0.8, { -1.0f, -0.7f, 4.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, REFR },  // small sphere 2
-	//{ 9.4, { 9.0f, 0.f, -9.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.f }, DIFF },  // small sphere 2
-	//{ 22, { 105.0f, 22, 24 }, { 0, 0, 0 }, { 0.9f, 0.9f, 0.9f }, DIFF }, // small sphere 3
-};
-
-
 //  RAY BOX INTERSECTION ROUTINES
 
 // Experimentally determined best mix of float/int/video minmax instructions for Kepler.
@@ -867,7 +848,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
 			////float4 HDRcol = g_texCuda.Fetch(index);
 			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			Vec3f HDRcol2 = Vec3f(0.025f, 0.025f, 0.025f);
+			Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
 
 			emit = HDRcol2 * 2.0f;
 			accucolor += (mask * emit); 
@@ -1023,8 +1004,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 
 				lastmaterialisdiffuse = true;
 			}
-
-			
 		} // end COAT
 
 		// perfectly refractive material (glass, water)
@@ -1209,7 +1188,8 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
 	//if (x > cudaRenderCam->resolution.x / 2)
-	if (1)
+	if (framenumber < 200)
+	//if (1)
 	{
 		ret_colour = accumbuffer[i];
 	}
