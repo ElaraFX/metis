@@ -119,122 +119,112 @@ void load_object(const char *filename)
 			TextureCUDA *pCurrentTexture = NULL;
 			unsigned totalVertices, totalNormals, totalUVs, totalTriangles = 0, totalMaterials, totalTextures;
 					
-			std::ifstream ifs(filenamestring.c_str(), std::ifstream::in);
-
-			if (!ifs.good())
+			FILE *pfile = fopen(filenamestring.c_str(), "rb");
+			if (!pfile)
 			{
-				std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
-				system("PAUSE");
-				exit(0);
+				// 读取文件失败，直接返回
+				return;
 			}
 
+			MemoryFile *mf = new MemoryFile(10000000);
 			MATERIALCONTAINER *curMaterialSet = NULL;
+			unsigned int curfilepointer = 0;                                    
 			int curMaterialIndex = 0;
-			std::string line, key;
-			while (!ifs.eof() && std::getline(ifs, line)) {
-			    key = "";
-			    std::stringstream stringstream(line);
-			    stringstream >> key >> std::ws;
-
-			    // if (sscanf(buffer, "v %f %f %f", &f1, &f2, &f3) == 3){
-			    // mesh.verts.push_back(Vec3f(f1, f2, f3));
-
-				if (key == "mtllib")
+			char strCommand[256] = {0};
+			char strString[256] = {0};
+			while (!feof(pfile))
+			{
+				mf->IgnoreGap();
+				if (mf->CheckEnd())
 				{
-					std::string filename;
-					if (!stringstream.eof()) {
-						stringstream >> filename >> std::ws;
-						curMaterialSet = &g_MaterialContainer;
-					}
+					if (!mf->ReadFromFile(pfile, curfilepointer))
+						break;
+					curfilepointer += mf->CutOffEndByChar('\n');
+					fseek(pfile, curfilepointer, SEEK_SET);  
 				}
-				else if (key == "usemtl")
+
+				mf->ReadstrUntilGap(strCommand);
+				if(0 == strcmp(strCommand, "#"))
+				{
+					// 注释
+				}
+				else if(0 == strcmp(strCommand, "mtllib"))
+				{
+					mf->ReadstrUntilGap(strString);
+					curMaterialSet = &g_MaterialContainer;
+				}
+				else if(0 == strcmp(strCommand, "usemtl"))
 				{
 					// Material
-					std::string materialname;
-					if (!stringstream.eof()) {
-						stringstream >> materialname >> std::ws;
-						bool bFound = false;
-						if (curMaterialSet != NULL)
+					char materialname[MAX_PATH] = {0};
+					mf->ReadstrUntilGap(materialname);
+
+					bool bFound = false;
+					if (curMaterialSet != NULL)
+					{
+						for(int iMaterial = 0; iMaterial < curMaterialSet->arrayMaterial.size(); iMaterial++)
 						{
-							for(int iMaterial = 0; iMaterial < curMaterialSet->arrayMaterial.size(); iMaterial++)
+							if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname) == 0)
 							{
-								if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname.c_str()) == 0)
-								{
-									bFound = true;
-									curMaterialIndex = iMaterial + 1;
-									break;
-								}
+								bFound = true;
+								curMaterialIndex = iMaterial + 1;
+								break;
 							}
 						}
+					}
 						
-						// 若没找到材质为空
-						if(!bFound)
-						{
-							curMaterialIndex = 0;
-							char szName[128] = " ";
-							printf(szName, "Error：Material %s cannot be found！", materialname.c_str());
-						}
+					// 若没找到材质为空
+					if(!bFound)
+					{
+						curMaterialIndex = 0;
+						char szName[128] = " ";
+						printf(szName, "Error：Material %s cannot be found！", materialname);
 					}
 				}
-			    else if (key == "v") { // vertex	
-				    float x, y, z;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
-					    mesh.verts.push_back(Vec3f(x, y, z));
-				    }
-			    }
-			    else if (key == "vp") { // parameter
-				    float x;
-				    // std::vector<float> tempparameters;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws;
-					    // tempparameters.push_back(x);
-				    }
-				    //parameters.push_back(tempparameters);
-			    }
-			    else if (key == "vt") { // texture coordinate
-				    float x, y, z;
-				    // std::vector<float> temptexcoords;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
-					    mesh.uvs.push_back(Vec3f(x, y, z));
-				    }
-				    //texcoords.push_back(temptexcoords);
-			    }
-			    else if (key == "vn") { // normal
-				    float x, y, z;
-				    // std::vector<float> tempnormals;
-				    while (!stringstream.eof()) {
-                        stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
-                        mesh.nors.push_back(Vec3f(x, y, z));
-					    //	tempnormals.push_back(x);
-				    }
-				    //tempnormal.normalize();
-				    //normals.push_back(tempnormals);
-			    }
-			    else if (key == "f") { // face
+				else if(0 == strcmp(strCommand, "v"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.verts.push_back(Vec3f(x, y, z));
+				}
+				else if(0 == strcmp(strCommand, "vt"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.uvs.push_back(Vec3f(x, y, z));
+				}
+				else if(0 == strcmp(strCommand, "vn"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.nors.push_back(Vec3f(x, y, z));
+				}
+			    else if (0 == strcmp(strCommand, "f")) { // face
 				    face f;
 				    int v, t, n;
-				    while (!stringstream.eof()) {
-					    stringstream >> v >> std::ws;
+				    for (int iFace = 0; iFace < 3; iFace++)
+					{
+					    v = mf->Readint();
 					    f.vertex.push_back(v); // v - 1
-					    if (stringstream.peek() == '/') {
-						    stringstream.get();
-						    if (stringstream.peek() == '/') {
-							    stringstream.get();
-							    stringstream >> n >> std::ws;
-							    f.normal.push_back(n - 1);
-						    }
-						    else {
-							    stringstream >> t >> std::ws;
-							    f.texture.push_back(t - 1);
-							    if (stringstream.peek() == '/') {
-								    stringstream.get();
-								    stringstream >> n >> std::ws;
-								    f.normal.push_back(n - 1);
-							    }
-						    }
-					    }
+						if('/' == mf->Peekchar())
+						{
+							mf->IgnoreUntilchar('/');
+							if('/' != mf->Peekchar())
+							{
+								t = mf->Readint();
+								f.texture.push_back(t - 1);
+							}
+
+							if('/' == mf->Peekchar())
+							{
+								mf->IgnoreUntilchar('/');
+								n = mf->Readint();
+								f.normal.push_back(n - 1);
+							}
+						}
 				    }
 
 			        int numtriangles = f.vertex.size() - 2; // 1 triangle if 3 vertices, 2 if 4 etc
@@ -260,7 +250,10 @@ void load_object(const char *filename)
 			    //}
 			    }
 			    else {
+
 			    }
+
+				mf->IgnoreUntilchar('\n');
 					
 			} // end of while loop
 

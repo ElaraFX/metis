@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "GReadFileToMemory.h"
 
 
@@ -61,6 +62,20 @@ float MemoryFile::Readfloat()
 		++i;
 	}
 	return float(atof(szfloat));
+}
+
+int MemoryFile::Readint()
+{
+	IgnoreGap();
+	char szint[32] = {0};
+	int i = 0;
+	while(pBuffer[pointer] >= '-' && pBuffer[pointer] <= '9' && pBuffer[pointer] != '/')
+	{
+		szint[i] = pBuffer[pointer];
+		++pointer;
+		++i;
+	}
+	return float(atoi(szint));
 }
 
 void MemoryFile::IgnoreUntilchar(char c)
