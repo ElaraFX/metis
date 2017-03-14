@@ -45,8 +45,6 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     hostRendercam = NULL;
     accumulatebuffer = NULL; // image buffer storing accumulated pixel samples
     finaloutputbuffer = NULL; // stores averaged pixel samples
-	depthbuffer = NULL;
-	eyecosdepthbuffer = NULL;
 	normalbuffer = NULL;
 	materialbuffer = NULL;
     gpuHDRenv = NULL;
@@ -63,7 +61,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     triIndicesSize = 0;
     scalefactor = 1.2f;
     nocachedBVH = false;
-	m_interval = 120;
+	m_interval = 40;
 	m_firsttime = true;
 
 	m_windowSize = 15;
@@ -71,8 +69,8 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_variance_col = 40;
 	m_variance_dep = 100;
 
-	mtlfile = "data/class1.mtl";
-    scenefile = "data/class1.obj"; 
+	mtlfile = "data/class2.mtl";
+    scenefile = "data/class2.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -277,8 +275,6 @@ void TriangleWindow::initCUDAscenedata()
     // allocate GPU memory for accumulation buffer
     cudaMalloc(&accumulatebuffer, width() * height() * sizeof(Vec3f));
     cudaMalloc(&normalbuffer, width() * height() * sizeof(Vec3f));
-    cudaMalloc(&depthbuffer, width() * height() * sizeof(float));
-    cudaMalloc(&eyecosdepthbuffer, width() * height() * sizeof(float));
     cudaMalloc(&materialbuffer, width() * height() * sizeof(float));
 
     // allocate GPU memory for interactive camera
@@ -391,8 +387,6 @@ void TriangleWindow::deleteCudaAndCpuMemory()
     cudaFree(cudaRendercam);
     cudaFree(accumulatebuffer);
     cudaFree(normalbuffer);
-    cudaFree(depthbuffer);
-    cudaFree(eyecosdepthbuffer);
     cudaFree(materialbuffer);
     cudaFree(finaloutputbuffer);
     cudaFree(gpuHDRenv);
@@ -421,16 +415,6 @@ void TriangleWindow::paintGL()
     // if camera has moved, reset the accumulation buffer
     if (buffer_reset){
 		cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
-		framenumber = 0; 
-	}
-
-	if (buffer_reset){
-		cudaMemset(depthbuffer, 1, width() * height() * sizeof(float)); 
-		framenumber = 0; 
-	}
-
-	if (buffer_reset){
-		cudaMemset(eyecosdepthbuffer, 1, width() * height() * sizeof(float)); 
 		framenumber = 0; 
 	}
 
@@ -469,7 +453,7 @@ void TriangleWindow::paintGL()
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
     cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, cudaTexturePtr, cudaTextureData, cudaTriUVPtr, finaloutputbuffer,
-        accumulatebuffer, normalbuffer, depthbuffer, eyecosdepthbuffer, materialbuffer, gpuHDRenv, 
+        accumulatebuffer, normalbuffer, materialbuffer, gpuHDRenv, 
 		framenumber, hashedframes, nodeSize, leafnode_count, triangle_count, cudaRendercam, width(), height(), m_windowSize, m_variance_pos, m_variance_col, m_variance_dep );
 
     cudaThreadSynchronize();

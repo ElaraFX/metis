@@ -1,18 +1,6 @@
 #include "CudaBVH.h"
 #include "SceneLoader.h"  // required for triangles and vertices
 
-//Nodes / BVHLayout_Compact  (12 floats + 4 ints = 64 bytes)
-// innernode contains two childnodes c0 and c1, each having x,y,z coords for AABBhi and AABBlo, 2*2*3 = 12 floats 
-//      
-//		nodes[innerOfs + 0 ] = Vec4f(c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)  // 4 floats = 16 bytes
-//      nodes[innerOfs + 16] = Vec4f(c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)  // increment nodes array index with 16
-//      nodes[innerOfs + 32] = Vec4f(c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-//      nodes[innerOfs + 48] = Vec4i(c0.innerOfs or ~c0.triOfs, c1.innerOfs or ~c1.triOfs, 0, 0)  // either inner or leaf, two dummy zeros at the end
-//		CudaBVH Compact: Vec4f(c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
-//		CudaBVH Compact: Vec4f(c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
-//		CudaBVH Compact: Vec4f(c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-//		CudaBVH Compact: Vec4f(c0.innerOfs or ~c0.triOfs, c1.innerOfs or ~c1.triOfs, 0, 0)
-//		BVH node bounds: c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y, c0.lo.z, c0.hi.z
 
 static int woopcount = 0;  // counts Woopified triangles
 
@@ -36,45 +24,6 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 
 CudaBVH::~CudaBVH(void)
 {
-}
-
-//------------------------------------------------------------------------
-
-Vec2i CudaBVH::getNodeSubArray(int idx) const
-{
-	FW_ASSERT(idx >= 0 && idx < 4);
-	S32 size = (S32)m_nodes.getSize();
-
-	if (m_layout == BVHLayout_SOA_AOS || m_layout == BVHLayout_SOA_SOA)
-		return Vec2i((size >> 2) * idx, (size >> 2));
-	return Vec2i(0, size);
-}
-
-//------------------------------------------------------------------------
-
-Vec2i CudaBVH::getTriWoopSubArray(int idx) const
-{
-	FW_ASSERT(idx >= 0 && idx < 4);
-	S32 size = (S32)m_triWoop.getSize();
-
-	if (m_layout == BVHLayout_AOS_SOA || m_layout == BVHLayout_SOA_SOA)
-		return Vec2i((size >> 2) * idx, (size >> 2));
-	return Vec2i(0, size);
-}
-
-//------------------------------------------------------------------------
-
-CudaBVH& CudaBVH::operator=(CudaBVH& other)  
-{
-	if (&other != this)
-	{
-		m_layout = other.m_layout;
-		m_nodes = other.m_nodes;
-		m_triWoop = other.m_triWoop;
-		m_triIndex = other.m_triIndex;
-		m_triUV = other.m_triUV;
-	}
-	return *this;
 }
 
 namespace detail
@@ -135,8 +84,6 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 				nodeData.add(NULL, 4); /// adds 4 * Vec4i per inner node or 4 * 16 bytes/Vec4i = 64 bytes of empty data per inner node
 				continue; // process remaining childnode (if any)
 			}
-
-
 
 			//////////////////////
 			/// LEAF NODE

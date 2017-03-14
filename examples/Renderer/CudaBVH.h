@@ -96,9 +96,6 @@ public:
 	~CudaBVH(void);
 
 	BVHLayout   getLayout(void) const            { return m_layout; }
-	Array<Vec4i>&  getNodeBuffer(void)            { return m_nodes; }
-	Array<Vec4i>&  getTriWoopBuffer(void)         { return m_triWoop; }
-	Array<S32>&    getTriIndexBuffer(void)        { return m_triIndex; }
 
 	Vec4i*  getGpuNodes(void)            { return m_gpuNodes; }
 	Vec4i*  getGpuTriWoop(void)         { return m_gpuTriWoop; }
@@ -130,11 +127,6 @@ private:
 
 private:
 	BVHLayout   m_layout;
-	
-	Array<Vec4i>      m_nodes; 
-	Array<Vec4i>      m_triWoop;
-	Array<Vec4f>      m_triUV;
-	Array<S32>        m_triIndex;
 
 	Vec4i*	m_gpuNodes;
 	Vec4i*  m_gpuTriWoop;

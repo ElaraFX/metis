@@ -35,9 +35,6 @@ texture<float4, 1, cudaReadModeElementType> triNormalsTexture;
 texture<int, 1, cudaReadModeElementType> triIndicesTexture;
 texture<float4, 1, cudaReadModeElementType> HDRtexture;
 
-TextureCUDA g_texCuda;
-TextureCUDA *gputex;
-
 __device__ inline Vec3f absmax3f(const Vec3f& v1, const Vec3f& v2){
 	return Vec3f(v1.x*v1.x > v2.x*v2.x ? v1.x : v2.x, v1.y*v1.y > v2.y*v2.y ? v1.y : v2.y, v1.z*v1.z > v2.z*v2.z ? v1.z : v2.z);
 }
@@ -48,30 +45,7 @@ struct Ray {
 	__device__ Ray(float3 o_, float3 d_) : orig(o_), dir(d_) {}
 };
 
-struct Sphere {
-
-	float rad;				// radius 
-	float3 pos, emi, col;	// position, emission, color 
-	Refl_t refl;			// reflection type (DIFFuse, SPECular, REFRactive)
-
-	__device__ float intersect(const Ray &r) const { // returns distance, 0 if nohit 
-
-		// ray/sphere intersection
-		float3 op = pos - r.orig;   
-		float t, epsilon = 0.01f;
-		float b = dot(op, r.dir);
-		float disc = b*b - dot(op, op) + rad*rad; // discriminant of quadratic formula
-		if (disc<0) return 0; else disc = sqrtf(disc);
-		return (t = b - disc) > epsilon ? t : ((t = b + disc) > epsilon ? t : 0.0f);
-	}
-};
-
 //  RAY BOX INTERSECTION ROUTINES
-
-// Experimentally determined best mix of float/int/video minmax instructions for Kepler.
-
-// float c0min = spanBeginKepler2(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, tmin); // Tesla does max4(min, min, min, tmin)
-// float c0max = spanEndKepler2(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, hitT); // Tesla does min4(max, max, max, tmax)
 
 // Perform min/max operations in hardware
 // Using Kepler's video instructions, see http://docs.nvidia.com/cuda/parallel-thread-execution/#axzz3jbhbcTZf																			//  : "=r"(v) overwrites v and puts it in a register
@@ -88,35 +62,6 @@ __device__ __inline__ float fmax_fmax(float a, float b, float c) { return __int_
 
 __device__ __inline__ float spanBeginKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d){ return fmax_fmax(fminf(a0, a1), fminf(b0, b1), fmin_fmax(c0, c1, d)); }
 __device__ __inline__ float spanEndKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d)	{ return fmin_fmin(fmaxf(a0, a1), fmaxf(b0, b1), fmax_fmin(c0, c1, d)); }
-
-// standard ray box intersection routines (for debugging purposes only)
-// based on Intersect::RayBox() in original Aila/Laine code
-__device__ __inline__ float spanBeginKepler2(float lo_x, float hi_x, float lo_y, float hi_y, float lo_z, float hi_z, float d){ 
-
-	Vec3f t0 = Vec3f(lo_x, lo_y, lo_z);
-	Vec3f t1 = Vec3f(hi_x, hi_y, hi_z);
-	
-	Vec3f realmin = min3f(t0, t1);
-
-	float raybox_tmin = realmin.max(); // maxmin
-
-	//return Vec2f(tmin, tmax);
-	return raybox_tmin;
-}
-
-__device__ __inline__ float spanEndKepler2(float lo_x, float hi_x, float lo_y, float hi_y, float lo_z, float hi_z, float d){
-
-	Vec3f t0 = Vec3f(lo_x, lo_y, lo_z);
-	Vec3f t1 = Vec3f(hi_x, hi_y, hi_z);
-
-	Vec3f realmax = max3f(t0, t1);
-
-	float raybox_tmax = realmax.min(); /// minmax
-
-	//return Vec2f(tmin, tmax);
-	return raybox_tmax;
-}
-
 __device__ __inline__ void swap2(int& a, int& b){ int temp = a; a = b; b = temp;}
 
 // standard ray triangle intersection routines (for debugging purposes only)
@@ -765,7 +710,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		int hitTriIdx = -1;
 		int bestTriIdx = -1;
 		int hitMaterial = -1;
-		int geomtype = -1;
 		float hitSphereDist = 1e20;
 		float hitDistance = 1e20;
 		float scene_t = 1e20;
@@ -803,7 +747,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		{
 			scene_t = hitDistance;
 			hitTriIdx = bestTriIdx;
-			geomtype = 2;
 		}
 
 		// sky gradient colour
@@ -858,22 +801,20 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 #endif // end of HDR
 
 		// TRIANGLES:
-		if (geomtype == 2){
-			material = mats[hitMaterial];
-			//pBestTri = &pTriangles[triangle_id];
-			hitpoint = rayorig + raydir * scene_t; // intersection point
+		material = mats[hitMaterial];
+		//pBestTri = &pTriangles[triangle_id];
+		hitpoint = rayorig + raydir * scene_t; // intersection point
 					
-			// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
-			n = trinormal;
-			n.normalize();
-			nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
-			//Vec3f colour = hitTriIdx->_colorf;
-			//Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
-			refltype = DIFF; // objectmaterial
-			//objcol = colour;
-			emit = Vec3f(0.0, 0.0, 0);  // object emission
-			accucolor += (mask * emit);
-		}
+		// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
+		n = trinormal;
+		n.normalize();
+		nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
+		//Vec3f colour = hitTriIdx->_colorf;
+		//Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
+		refltype = DIFF; // objectmaterial
+		//objcol = colour;
+		emit = Vec3f(0.0, 0.0, 0);  // object emission
+		accucolor += (mask * emit);
 
 		// get information for denoise
 		if (bounces == 0)
@@ -1068,7 +1009,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 	return accucolor;
 }
 
-__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
+__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
 	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
 	unsigned int tricount, const Camera* cudaRendercam) 
 {
@@ -1172,13 +1113,11 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 
 	// get depth and normal
 	//depthbuffer[i] = depth;
-	depthbuffer[i] = depthbuffer[i] * (framenumber - 1) / framenumber + depth / framenumber;
 	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
-	eyecosdepthbuffer[i] = eyecosdepthbuffer[i] * (framenumber - 1) / framenumber + eyecosdepth / framenumber;
 	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
 }
 
-__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
@@ -1211,9 +1150,7 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 				if ((index_x < 0 || index_x >= cudaRenderCam->resolution.x || index_y < 0 || index_y >= cudaRenderCam->resolution.y))
 					continue;
 				index = index_y * cudaRenderCam->resolution.x + index_x;
-				weight = /*((abs(eyecosdepthbuffer[i] - eyecosdepthbuffer[index]) < 0.001f) ? 1.0f : 
-					exp(-(depthbuffer[i] - depthbuffer[index]) * (depthbuffer[i] - depthbuffer[index]) / (2.0f * dep_variance))) **/	
-					max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
+				weight = max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
 					(abs(materialbuffer[i] - materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
 					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
 					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
@@ -1255,7 +1192,7 @@ bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
 void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv,
-	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
+	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
 	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var){
 
 	if (firstTime) {
@@ -1289,9 +1226,9 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
 
-	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
+	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
 		triInds, mats, tex, texdata, uv, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
-	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);
+	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);
 }
