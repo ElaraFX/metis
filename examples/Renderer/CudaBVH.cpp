@@ -8,6 +8,11 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 	: m_layout(layout)
 {
 	FW_ASSERT(layout >= 0 && layout < BVHLayout_Max);
+	m_gpuNodes = NULL;
+	m_gpuTriWoop = NULL;
+	m_debugTri = NULL;
+	m_UVTri = NULL;
+	m_gpuTriIndices = NULL;
 
 	if (layout == BVHLayout_Compact)
 	{
@@ -24,6 +29,11 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 
 CudaBVH::~CudaBVH(void)
 {
+	free(m_gpuNodes);
+    free(m_gpuTriWoop);
+    free(m_debugTri);
+    free(m_UVTri);
+    free(m_gpuTriIndices);
 }
 
 namespace detail
@@ -205,17 +215,17 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     const Vec3i& uvInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).uvIndex;
 	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
 
-	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-	const Vec3f& v1 = Vec3f(vertices[vtxInds._v[1]].x, vertices[vtxInds._v[1]].y, vertices[vtxInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-	const Vec3f& v2 = Vec3f(vertices[vtxInds._v[2]].x, vertices[vtxInds._v[2]].y, vertices[vtxInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+	const Vec3f& v0 = Vec3f(scene_info.vertices[vtxInds._v[0]].x, scene_info.vertices[vtxInds._v[0]].y, scene_info.vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+	const Vec3f& v1 = Vec3f(scene_info.vertices[vtxInds._v[1]].x, scene_info.vertices[vtxInds._v[1]].y, scene_info.vertices[vtxInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+	const Vec3f& v2 = Vec3f(scene_info.vertices[vtxInds._v[2]].x, scene_info.vertices[vtxInds._v[2]].y, scene_info.vertices[vtxInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
-    const Vec3f& n0 = Vec3f(normals[norInds._v[0]].x, normals[norInds._v[0]].y, normals[norInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-    const Vec3f& n1 = Vec3f(normals[norInds._v[1]].x, normals[norInds._v[1]].y, normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-    const Vec3f& n2 = Vec3f(normals[norInds._v[2]].x, normals[norInds._v[2]].y, normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+    const Vec3f& n0 = Vec3f(scene_info.normals[norInds._v[0]].x, scene_info.normals[norInds._v[0]].y, scene_info.normals[norInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+    const Vec3f& n1 = Vec3f(scene_info.normals[norInds._v[1]].x, scene_info.normals[norInds._v[1]].y, scene_info.normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+    const Vec3f& n2 = Vec3f(scene_info.normals[norInds._v[2]].x, scene_info.normals[norInds._v[2]].y, scene_info.normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 	
-    const Vec3f& uv0 = Vec3f(uvs[uvInds._v[0]].x, uvs[uvInds._v[0]].y, uvs[uvInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-    const Vec3f& uv1 = Vec3f(uvs[uvInds._v[1]].x, uvs[uvInds._v[1]].y, uvs[uvInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-    const Vec3f& uv2 = Vec3f(uvs[uvInds._v[2]].x, uvs[uvInds._v[2]].y, uvs[uvInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+    const Vec3f& uv0 = Vec3f(scene_info.uvs[uvInds._v[0]].x, scene_info.uvs[uvInds._v[0]].y, scene_info.uvs[uvInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+    const Vec3f& uv1 = Vec3f(scene_info.uvs[uvInds._v[1]].x, scene_info.uvs[uvInds._v[1]].y, scene_info.uvs[uvInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+    const Vec3f& uv2 = Vec3f(scene_info.uvs[uvInds._v[2]].x, scene_info.uvs[uvInds._v[2]].y, scene_info.uvs[uvInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
 	// regular triangles (for debugging only)
 	m_debugtri[0] = Vec4f(v0.x, v0.y, v0.z, 0.0f);

@@ -20,19 +20,8 @@
 
 using std::string;
 
-unsigned verticesNo = 0;
-unsigned normalsNo = 0;
-unsigned trianglesNo = 0;
-unsigned materialNo = 0;
-unsigned textureNo = 0;
-unsigned textotalsize = 0;
-unsigned uvNo = 0;
-Vertex* vertices = NULL;   // vertex list
-Vec3f* normals = NULL;
-Vec3f* uvs = NULL;
-Triangle* triangles = NULL;  // triangle list
-MaterialCUDA* materials = NULL;
-TextureCUDA* textures = NULL;
+SceneInfo scene_info;
+
 
 struct face {                  
 	std::vector<int> vertex;
@@ -264,29 +253,29 @@ void load_object(const char *filename)
 			totalMaterials = g_MaterialContainer.arrayMaterial.size() + 1;
 			totalTextures = g_TextureContainer.arrayTexture.size();
 
-			vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
-			verticesNo = totalVertices;
-			pCurrentVertex = vertices;
+			scene_info.vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
+			scene_info.verticesNo = totalVertices;
+			pCurrentVertex = scene_info.vertices;
 
-            normals = (Vec3f*)malloc(totalNormals*sizeof(Vec3f));
-            normalsNo = totalNormals;
-            pCurrentNormal = normals;
+            scene_info.normals = (Vec3f*)malloc(totalNormals*sizeof(Vec3f));
+            scene_info.normalsNo = totalNormals;
+            pCurrentNormal = scene_info.normals;
 
-			triangles = (Triangle *)malloc(totalTriangles*sizeof(Triangle));
-			trianglesNo = totalTriangles;
-			pCurrentTriangle = triangles;
+			scene_info.triangles = (Triangle *)malloc(totalTriangles*sizeof(Triangle));
+			scene_info.trianglesNo = totalTriangles;
+			pCurrentTriangle = scene_info.triangles;
 
-			materials = (MaterialCUDA*)malloc(totalMaterials*sizeof(MaterialCUDA));
-			materialNo = totalMaterials;
-			pCurrentMaterial = materials;
+			scene_info.materials = (MaterialCUDA*)malloc(totalMaterials*sizeof(MaterialCUDA));
+			scene_info.materialNo = totalMaterials;
+			pCurrentMaterial = scene_info.materials;
 
-			textures = (TextureCUDA*)malloc(totalTextures*sizeof(TextureCUDA));
-			textureNo = totalTextures;
-			pCurrentTexture = textures;
+			scene_info.textures = (TextureCUDA*)malloc(totalTextures*sizeof(TextureCUDA));
+			scene_info.textureNo = totalTextures;
+			pCurrentTexture = scene_info.textures;
 
-			uvs = (Vec3f*)malloc(totalUVs*sizeof(Vec3f));
-            uvNo = totalUVs;
-            pCurrentUV = uvs;
+			scene_info.uvs = (Vec3f*)malloc(totalUVs*sizeof(Vec3f));
+            scene_info.uvNo = totalUVs;
+            pCurrentUV = scene_info.uvs;
 
 			std::cout << "total vertices: " << totalVertices << "\n";
             std::cout << "total normals: " << totalNormals << "\n";
@@ -322,7 +311,7 @@ void load_object(const char *filename)
             }
 
 			int start_index = 0;
-			for (int i = 0; i < textureNo; i++){
+			for (int i = 0; i < scene_info.textureNo; i++){
 				Texture *currenttex = g_TextureContainer.arrayTexture[i];
 
 				pCurrentTexture->texels = currenttex->m_Bitmap;
@@ -332,9 +321,9 @@ void load_object(const char *filename)
 				start_index += pCurrentTexture->height * pCurrentTexture->width;
                 pCurrentTexture++;
             }
-			textotalsize = start_index;
+			scene_info.textotalsize = start_index;
 
-			for (int i = 0; i < materialNo; i++){
+			for (int i = 0; i < scene_info.materialNo; i++){
 				if(i == 0)
 				{
 					pCurrentMaterial->m_ColorReflect = 0;
@@ -389,9 +378,9 @@ void load_object(const char *filename)
                 pCurrentTriangle->n_idx2 = currentnorminds.y;
                 pCurrentTriangle->n_idx3 = currentnorminds.z;
 
-				Vertex *vertexA = &vertices[currentfaceinds.x - 1];
-				Vertex *vertexB = &vertices[currentfaceinds.y - 1];
-				Vertex *vertexC = &vertices[currentfaceinds.z - 1];
+				Vertex *vertexA = &scene_info.vertices[currentfaceinds.x - 1];
+				Vertex *vertexB = &scene_info.vertices[currentfaceinds.y - 1];
+				Vertex *vertexC = &scene_info.vertices[currentfaceinds.z - 1];
 
 
 				pCurrentTriangle->_center = Vec3f(
@@ -409,12 +398,12 @@ void load_object(const char *filename)
 	else
 		panic("No extension in filename (only .ply accepted)");
 
-	std::cout << "Vertices:  " << verticesNo << std::endl;
-    std::cout << "Normals:  " << normalsNo << std::endl;
-	std::cout << "Triangles: " << trianglesNo << std::endl;
-	std::cout << "Materials: " << materialNo << std::endl;
-	std::cout << "UVs: " << uvNo << std::endl;
-	std::cout << "Textures: " << textureNo << std::endl;
+	std::cout << "Vertices:  " << scene_info.verticesNo << std::endl;
+    std::cout << "Normals:  " << scene_info.normalsNo << std::endl;
+	std::cout << "Triangles: " << scene_info.trianglesNo << std::endl;
+	std::cout << "Materials: " << scene_info.materialNo << std::endl;
+	std::cout << "UVs: " << scene_info.uvNo << std::endl;
+	std::cout << "Textures: " << scene_info.textureNo << std::endl;
 }
 
 Vec3f degamma(float r, float g, float b)
@@ -566,15 +555,15 @@ float processgeo(){
 
 	// calculate min and max bounds of scene
 	// loop over all triangles in scene, grow minp and maxp
-	for (unsigned i = 0; i < trianglesNo; i++) {
+	for (unsigned i = 0; i < scene_info.trianglesNo; i++) {
 
-		minp = min3f(minp, vertices[triangles[i].v_idx1]);
-		minp = min3f(minp, vertices[triangles[i].v_idx2]);
-		minp = min3f(minp, vertices[triangles[i].v_idx3]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx1]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx2]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx3]);
 
-		maxp = max3f(maxp, vertices[triangles[i].v_idx1]);
-		maxp = max3f(maxp, vertices[triangles[i].v_idx2]);
-		maxp = max3f(maxp, vertices[triangles[i].v_idx3]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx1]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx2]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx3]);
 	}
 
 	// scene bounding box center before scaling and translating
@@ -600,11 +589,11 @@ float processgeo(){
 	std::cout << "Center origin: " << origCenter.x << " " << origCenter.y << " " << origCenter.z << "\n";
 
 	std::cout << "\nCentering and scaling vertices..." << std::endl;
-	for (unsigned i = 0; i<verticesNo; i++) {
-		vertices[i] -= origCenter;
+	for (unsigned i = 0; i<scene_info.verticesNo; i++) {
+		scene_info.vertices[i] -= origCenter;
 		//vertices[i].y += origCenter.y;
 		//vertices[i] *= (MaxCoordAfterRescale / maxi);
-		vertices[i] *= 20; // 0.25
+		scene_info.vertices[i] *= 20; // 0.25
 	}
 
 	return MaxCoordAfterRescale;

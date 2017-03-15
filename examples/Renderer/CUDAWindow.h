@@ -52,12 +52,6 @@ private:
     GLuint m_matrixUniform;
 
     GLuint m_vbo;
-    Vec4i* cpuNodePtr;
-    Vec4i* cpuTriWoopPtr;
-    Vec4i* cpuTriDebugPtr;
-    Vec4f* cpuTriNormalPtr;
-    Vec4f* cpuTriUVPtr;
-    S32*   cpuTriIndicesPtr;
 
     float4* cudaNodePtr;
     float4* cudaTriWoopPtr;

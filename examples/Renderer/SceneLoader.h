@@ -7,19 +7,40 @@
 
 struct TextureCUDA;
 
-extern unsigned verticesNo;
-extern unsigned normalsNo;
-extern unsigned materialNo;
-extern unsigned textureNo;
-extern unsigned textotalsize;
-extern unsigned uvNo;
-extern Vertex* vertices;
-extern Vec3f* normals;
-extern Vec3f* uvs;
-extern unsigned int trianglesNo;
-extern Triangle* triangles;
-extern MaterialCUDA* materials;
-extern TextureCUDA* textures;
+struct SceneInfo
+{
+	unsigned verticesNo;
+	unsigned normalsNo;
+	unsigned trianglesNo;
+	unsigned materialNo;
+	unsigned textureNo;
+	unsigned textotalsize;
+	unsigned uvNo;
+	Vertex* vertices;   // vertex list
+	Vec3f* normals;
+	Vec3f* uvs;
+	Triangle* triangles;  // triangle list
+	MaterialCUDA* materials;
+	TextureCUDA* textures;
+	SceneInfo()
+	{
+		verticesNo = 0;
+		normalsNo = 0;
+		trianglesNo = 0;
+		materialNo = 0;
+		textureNo = 0;
+		textotalsize = 0;
+		uvNo = 0;
+		vertices = NULL;   // vertex list
+		normals = NULL;
+		uvs = NULL;
+		triangles = NULL;  // triangle list
+		materials = NULL;
+		textures = NULL;
+	}
+};
+
+extern SceneInfo scene_info;
 
 void panic(const char *fmt, ...);
 void load_object(const char *filename);
