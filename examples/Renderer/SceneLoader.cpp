@@ -218,33 +218,33 @@ void load_object(const char *filename)
 
 			        int numtriangles = f.vertex.size() - 2; // 1 triangle if 3 vertices, 2 if 4 etc
 
-			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
-			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
-                    mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
-					if (f.texture.size() <= i + 2)
-					{
-						mesh.faceUvIndexs.push_back(Vec3i(0, 0, 0));
+			        for (int i = 0; i < numtriangles; i++)
+					{  
+						// first vertex remains the same for all triangles in a triangle fan
+						mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
+						mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
+						if (f.texture.size() <= i + 2)
+						{
+							mesh.faceUvIndexs.push_back(Vec3i(0, 0, 0));
+						}
+						else
+						{
+							mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
+						}
+						mesh.materialIndexs.push_back(curMaterialIndex);
 					}
-					else
-					{
-						mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
-					}
-					mesh.materialIndexs.push_back(curMaterialIndex);
 			    }
-
-			    //while (stream >> v_extra) {
-			    //	v2 = v3;
-			    //	v3 = v_extra;
-			    //	mesh.faces.push_back(Vec3i(v1, v2, v3));
-			    //}
-			    }
-			    else {
+			    else 
+				{
 
 			    }
 
 				mf->IgnoreUntilchar('\n');
 					
 			} // end of while loop
+
+			// delete memoryfile
+			delete mf;
 
 			totalVertices = mesh.verts.size();
             totalNormals = mesh.nors.size();
@@ -455,7 +455,7 @@ void load_material(const char* strFileName)
 
             float r, g, b, average;
             InFile>>r>>g>>b;
-			pMaterial->m_ColorReflect = degamma(r, g, b);
+			pMaterial->m_ColorReflect = Vec3f(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ni"))
         {
@@ -478,7 +478,7 @@ void load_material(const char* strFileName)
 				g *= weight;
 				b *= weight;
 			}
-			pMaterial->m_SpecColorReflect = degamma(r, g, b);
+			pMaterial->m_SpecColorReflect = Vec3f(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ke"))
         {

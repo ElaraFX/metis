@@ -22,42 +22,26 @@
 
 TriangleWindow::TriangleWindow(QWidget *parent)
     : QOpenGLWidget(parent)
-    , m_frame(0)
 {
-    cudaNodePtr = NULL;
-    cudaTriWoopPtr = NULL;
-    cudaTriDebugPtr = NULL;
-	cudaTriUVPtr = NULL;
-    cudaTriNormalPtr = NULL;
-    cudaTriIndicesPtr = NULL;
-	cudaMaterialsPtr = NULL;
-	cudaTexturePtr = NULL;
-	cudaTextureData = NULL;
-
-    cudaRendercam = NULL;
     hostRendercam = NULL;
-    accumulatebuffer = NULL; // image buffer storing accumulated pixel samples
+    
     finaloutputbuffer = NULL; // stores averaged pixel samples
-	normalbuffer = NULL;
-	materialbuffer = NULL;
     gpuHDRenv = NULL;
     cpuHDRenv = NULL;
     m_triNormals = NULL;
     gpuBVH = NULL;
 
     framenumber = 0;
-    scalefactor = 1.2f;
-    nocachedBVH = false;
 	m_interval = 40;
 	m_firsttime = true;
 
-	m_windowSize = 15;
-	m_variance_pos = 100;
-	m_variance_col = 40;
-	m_variance_dep = 100;
+	cp.m_windowSize = 15;
+	cp.m_variance_pos = 100;
+	cp.m_variance_col = 40;
+	cp.m_variance_dep = 100;
 
-	mtlfile = "data/class2.mtl";
-    scenefile = "data/class2.obj"; 
+	mtlfile = "data/teapot1.mtl";
+    scenefile = "data/teapot1.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -120,21 +104,21 @@ void TriangleWindow::ProfilerEnd(long long int numRays) {
 }
 
 void TriangleWindow::slotWindowSizeChanged(int size){
-	m_windowSize = size;
+	cp.m_windowSize = size;
 	buffer_reset = true;
 }
 void TriangleWindow::slotVariancPosChanged(double val){
-	m_variance_pos = val;
+	cp.m_variance_pos = val;
 	buffer_reset = true;
 }
 
 void TriangleWindow::slotVariancColChanged(double val){
-	m_variance_col = val;
+	cp.m_variance_col = val;
 	buffer_reset = true;
 }
 
 void TriangleWindow::slotVariancDepChanged(double val){
-	m_variance_dep = val;
+	cp.m_variance_dep = val;
 	buffer_reset = true;
 }
 
@@ -191,40 +175,45 @@ void TriangleWindow::initHDR(){
 void TriangleWindow::initCUDAscenedata()
 {
     // allocate GPU memory for accumulation buffer
-    cudaMalloc(&accumulatebuffer, width() * height() * sizeof(Vec3f));
-    cudaMalloc(&normalbuffer, width() * height() * sizeof(Vec3f));
-    cudaMalloc(&materialbuffer, width() * height() * sizeof(float));
+	//cudaMalloc((void**)&m_gpu_data, sizeof(gpuData));
+	m_host_gpu_data = new gpuData();
+    cudaMalloc(&m_host_gpu_data->accumulatebuffer, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->normalbuffer, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->materialbuffer, width() * height() * sizeof(float));
 
     // allocate GPU memory for interactive camera
-    cudaMalloc((void**)&cudaRendercam, sizeof(Camera));
+    cudaMalloc((void**)&m_host_gpu_data->cudaRendercam, sizeof(Camera));
 
     // allocate and copy scene databuffers to the GPU (BVH nodes, triangle vertices, triangle indices)
-    cudaMalloc((void**)&cudaNodePtr, gpuBVH->getGpuNodesSize() * sizeof(float4));
-    cudaMemcpy(cudaNodePtr, gpuBVH->getGpuNodes(), gpuBVH->getGpuNodesSize() * sizeof(float4), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&m_host_gpu_data->cudaNodePtr, gpuBVH->getGpuNodesSize() * sizeof(float4));
+    cudaMemcpy(m_host_gpu_data->cudaNodePtr, gpuBVH->getGpuNodes(), gpuBVH->getGpuNodesSize() * sizeof(float4), cudaMemcpyHostToDevice);
 
-    cudaMalloc((void**)&cudaTriWoopPtr, gpuBVH->getGpuTriWoopSize() * sizeof(float4));
-    cudaMemcpy(cudaTriWoopPtr, gpuBVH->getGpuTriWoop(), gpuBVH->getGpuTriWoopSize() * sizeof(float4), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&m_host_gpu_data->cudaTriNormalPtr, gpuBVH->getGpuTriNormalSize() * sizeof(float4));
+    cudaMemcpy(m_host_gpu_data->cudaTriNormalPtr, gpuBVH->getGpuTriNormal(), gpuBVH->getGpuTriNormalSize() * sizeof(float4), cudaMemcpyHostToDevice);
 
-    cudaMalloc((void**)&cudaTriDebugPtr, gpuBVH->getDebugTriSize() * sizeof(float4));
-    cudaMemcpy(cudaTriDebugPtr, gpuBVH->getDebugTri(), gpuBVH->getDebugTriSize() * sizeof(float4), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&m_host_gpu_data->cudaTriDebugPtr, gpuBVH->getDebugTriSize() * sizeof(float4));
+    cudaMemcpy(m_host_gpu_data->cudaTriDebugPtr, gpuBVH->getDebugTri(), gpuBVH->getDebugTriSize() * sizeof(float4), cudaMemcpyHostToDevice);
 
-	cudaMalloc((void**)&cudaTriUVPtr, gpuBVH->getUVTriSize() * sizeof(float4));
-    cudaMemcpy(cudaTriUVPtr, gpuBVH->getUVTri(), gpuBVH->getUVTriSize() * sizeof(float4), cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&m_host_gpu_data->cudaTriUVPtr, gpuBVH->getUVTriSize() * sizeof(float4));
+    cudaMemcpy(m_host_gpu_data->cudaTriUVPtr, gpuBVH->getUVTri(), gpuBVH->getUVTriSize() * sizeof(float4), cudaMemcpyHostToDevice);
 
-    cudaMalloc((void**)&cudaTriIndicesPtr, gpuBVH->getGpuTriIndicesSize() * sizeof(S32));
-    cudaMemcpy(cudaTriIndicesPtr, gpuBVH->getGpuTriIndices(), gpuBVH->getGpuTriIndicesSize() * sizeof(S32), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&m_host_gpu_data->cudaTriIndicesPtr, gpuBVH->getGpuTriIndicesSize() * sizeof(S32));
+    cudaMemcpy(m_host_gpu_data->cudaTriIndicesPtr, gpuBVH->getGpuTriIndices(), gpuBVH->getGpuTriIndicesSize() * sizeof(S32), cudaMemcpyHostToDevice);
 
-	cudaMalloc((void**)&cudaMaterialsPtr, scene_info.materialNo * sizeof(MaterialCUDA));
-    cudaMemcpy(cudaMaterialsPtr, scene_info.materials, scene_info.materialNo * sizeof(MaterialCUDA), cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&m_host_gpu_data->cudaMaterialsPtr, scene_info.materialNo * sizeof(MaterialCUDA));
+    cudaMemcpy(m_host_gpu_data->cudaMaterialsPtr, scene_info.materials, scene_info.materialNo * sizeof(MaterialCUDA), cudaMemcpyHostToDevice);
 
-	cudaMalloc((void**)&cudaTexturePtr, scene_info.textureNo * sizeof(TextureCUDA));
-    cudaMemcpy(cudaTexturePtr, scene_info.textures, scene_info.textureNo * sizeof(TextureCUDA), cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&m_host_gpu_data->cudaTexturePtr, scene_info.textureNo * sizeof(TextureCUDA));
+    cudaMemcpy(m_host_gpu_data->cudaTexturePtr, scene_info.textures, scene_info.textureNo * sizeof(TextureCUDA), cudaMemcpyHostToDevice);
 
-	cudaMalloc((void**)&cudaTextureData, scene_info.textotalsize * sizeof(float4));
+	cudaMalloc((void**)&m_host_gpu_data->cudaTextureData, scene_info.textotalsize * sizeof(float4));
 	for (int i = 0; i < scene_info.textureNo; i++)
 	{
-		cudaMemcpy(cudaTextureData + scene_info.textures[i].start_index, scene_info.textures[i].texels, scene_info.textures[i].height * scene_info.textures[i].width * sizeof(float4), cudaMemcpyHostToDevice);
+		cudaMemcpy(m_host_gpu_data->cudaTextureData + scene_info.textures[i].start_index, scene_info.textures[i].texels, scene_info.textures[i].height * scene_info.textures[i].width * sizeof(float4), cudaMemcpyHostToDevice);
 	}
+	
+	cudaMalloc((void**)&m_gpu_data, sizeof(gpuData));
+	cudaMemcpy(m_gpu_data, m_host_gpu_data, sizeof(gpuData), cudaMemcpyHostToDevice);
 
     std::cout << "Scene data copied to CUDA\n";
 }
@@ -278,26 +267,15 @@ void TriangleWindow::createBVH(){
 void TriangleWindow::deleteCudaAndCpuMemory()
 {
     // free CUDA memory
-    cudaFree(cudaNodePtr);
-    cudaFree(cudaTriWoopPtr);
-    cudaFree(cudaTriDebugPtr);
-    cudaFree(cudaTriUVPtr);
-    cudaFree(cudaTriNormalPtr);
-    cudaFree(cudaTriIndicesPtr);
-	cudaFree(cudaMaterialsPtr);
-	cudaFree(cudaTexturePtr);
-	cudaFree(cudaTextureData);
-    cudaFree(cudaRendercam);
-    cudaFree(accumulatebuffer);
-    cudaFree(normalbuffer);
-    cudaFree(materialbuffer);
     cudaFree(finaloutputbuffer);
     cudaFree(gpuHDRenv);
+    cudaFree(m_gpu_data);
 
     delete hostRendercam;
     delete interactiveCamera;
     delete cpuHDRenv;
     delete gpuBVH;
+	delete m_host_gpu_data;
 }
 
 //! [5]
@@ -309,9 +287,9 @@ void TriangleWindow::paintGL()
 
     // if camera has moved, reset the accumulation buffer
     if (buffer_reset){
-		cudaMemset(accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
-		cudaMemset(materialbuffer, 1, width() * height() * sizeof(float)); 
-		cudaMemset(normalbuffer, 1, width() * height() * sizeof(Vec3f)); 
+		cudaMemset(m_host_gpu_data->accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
+		cudaMemset(m_host_gpu_data->materialbuffer, 1, width() * height() * sizeof(float)); 
+		cudaMemset(m_host_gpu_data->normalbuffer, 1, width() * height() * sizeof(Vec3f)); 
 		framenumber = 0; 
 	}
 
@@ -328,7 +306,7 @@ void TriangleWindow::paintGL()
     interactiveCamera->buildRenderCamera(hostRendercam);
 
     // copy the CPU camera to a GPU camera
-    cudaMemcpy(cudaRendercam, hostRendercam, sizeof(Camera), cudaMemcpyHostToDevice);
+    cudaMemcpy(m_host_gpu_data->cudaRendercam, hostRendercam, sizeof(Camera), cudaMemcpyHostToDevice);
 
     cudaThreadSynchronize();
     cudaGLMapBufferObject((void**)&finaloutputbuffer, m_vbo); // maps a buffer object for access by CUDA
@@ -339,10 +317,9 @@ void TriangleWindow::paintGL()
     unsigned int hashedframes = WangHash(framenumber);
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
-    cudaRender(cudaNodePtr, cudaTriWoopPtr, cudaTriDebugPtr, cudaTriIndicesPtr,cudaMaterialsPtr, cudaTexturePtr, cudaTextureData, cudaTriUVPtr, finaloutputbuffer,
-        accumulatebuffer, normalbuffer, materialbuffer, gpuHDRenv, 
-		framenumber, hashedframes, gpuBVH->getGpuNodesSize(), gpuBVH->getLeafnodeCount(), gpuBVH->getTriCount(), cudaRendercam, width(), height(), m_windowSize, m_variance_pos, m_variance_col, m_variance_dep );
-
+    cudaRender(m_host_gpu_data, m_gpu_data, finaloutputbuffer, gpuHDRenv,
+		framenumber, hashedframes, gpuBVH->getGpuNodesSize(), gpuBVH->getLeafnodeCount(), gpuBVH->getTriCount(), width(), height(), &cp );
+	
     cudaThreadSynchronize();
     cudaGLUnmapBufferObject(m_vbo);
     //glFlush();
@@ -355,7 +332,6 @@ void TriangleWindow::paintGL()
     glDrawArrays(GL_POINTS, 0, width() * height());
     glDisableClientState(GL_VERTEX_ARRAY);
 
-    ++m_frame;
     update();
 
 	if(framenumber % m_interval == 0){

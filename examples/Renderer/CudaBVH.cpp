@@ -9,7 +9,7 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 {
 	FW_ASSERT(layout >= 0 && layout < BVHLayout_Max);
 	m_gpuNodes = NULL;
-	m_gpuTriWoop = NULL;
+	m_gpuTriNormal = NULL;
 	m_debugTri = NULL;
 	m_UVTri = NULL;
 	m_gpuTriIndices = NULL;
@@ -30,7 +30,7 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 CudaBVH::~CudaBVH(void)
 {
 	free(m_gpuNodes);
-    free(m_gpuTriWoop);
+    free(m_gpuTriNormal);
     free(m_debugTri);
     free(m_UVTri);
     free(m_gpuTriIndices);
@@ -56,7 +56,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 	// construct and initialize data arrays which will be copied to CudaBVH buffers (last part of this function). 
 
 	Array<Vec4i> nodeData(NULL, 4); 
-	Array<Vec4i> triWoopData;
+	Array<Vec4i> triNormalData;
 	Array<Vec4i> triDebugData; // array for regular (non-woop) triangles
 	Array<Vec4f> triUVData;
 	Array<S32> triIndexData;
@@ -104,7 +104,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 			const LeafNode* leaf = reinterpret_cast<const LeafNode*>(child);
 			
 			// index of a leafnode is a negative number, hence the ~
-			cidx[i] = ~triWoopData.getSize();  // leafs must be stored as negative (bitwise complement) in order to be recognised by pathtracer as a leaf
+			cidx[i] = ~triNormalData.getSize();  // leafs must be stored as negative (bitwise complement) in order to be recognised by pathtracer as a leaf
 		
 			// for each triangle in leaf, range of triangle index j from m_lo to m_hi 
 			for (int j = leaf->m_lo; j < leaf->m_hi; j++) 
@@ -115,7 +115,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 				if (m_woop[0].x == 0.0f) m_woop[0].x = 0.0f;  // avoid degenerate coordinates
 				// add the transformed woop triangle to triWoopData
 				
-				triWoopData.add((Vec4i*)m_normaltri, 3);  
+				triNormalData.add((Vec4i*)m_normaltri, 3);  
 				
 				triDebugData.add((Vec4i*)m_debugtri, 3);  
 				
@@ -128,7 +128,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 			}
 
 			// Leaf node terminator to indicate end of leaf, stores hexadecimal value 0x80000000 (= 2147483648 in decimal)
-			triWoopData.add(0x80000000); // leafnode terminator code indicates the last triangle of the leaf node
+			triNormalData.add(0x80000000); // leafnode terminator code indicates the last triangle of the leaf node
 			triDebugData.add(0x80000000); 
 			triUVData.add(0x80000000);
 			
@@ -165,14 +165,14 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 		m_gpuNodes[i].w = nodeData.get(i).w; // child indices
 	}	
 
-	m_gpuTriWoop = (Vec4i*) malloc(triWoopData.getSize() * sizeof(Vec4i));
-	m_gpuTriWoopSize = triWoopData.getSize();
+	m_gpuTriNormal = (Vec4i*) malloc(triNormalData.getSize() * sizeof(Vec4i));
+	m_gpuTriNormalSize = triNormalData.getSize();
 
-	for (int i = 0; i < triWoopData.getSize(); i++){
-		m_gpuTriWoop[i].x = triWoopData.get(i).x;
-		m_gpuTriWoop[i].y = triWoopData.get(i).y;
-		m_gpuTriWoop[i].z = triWoopData.get(i).z;
-		m_gpuTriWoop[i].w = triWoopData.get(i).w;
+	for (int i = 0; i < triNormalData.getSize(); i++){
+		m_gpuTriNormal[i].x = triNormalData.get(i).x;
+		m_gpuTriNormal[i].y = triNormalData.get(i).y;
+		m_gpuTriNormal[i].z = triNormalData.get(i).z;
+		m_gpuTriNormal[i].w = triNormalData.get(i).w;
 	}
 
 	m_debugTri = (Vec4i*)malloc(triDebugData.getSize() * sizeof(Vec4i));

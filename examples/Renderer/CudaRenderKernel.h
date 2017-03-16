@@ -2,15 +2,14 @@
 #include "linear_math.h"
 #include <cuda.h>
 #include "stdio.h"
-#include "Camera.h"
-#include "MMaterial.h"
+#include "RenderData.h"
 
 //#define scrwidth 1280
 //#define scrheight 720
 
-void cudaRender(const float4* cudaNodes, const float4* cudaTriWoops, const float4* cudaDebugTris, const int* cudaTriInds, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv,
-	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int totalnodecnt, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var);
+
+void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
+	const unsigned int totalnodecnt, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp);
 
 //------------------------------------------------------------------------
 // Constants.

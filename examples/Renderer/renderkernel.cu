@@ -26,13 +26,8 @@
 #define EntrypointSentinel 0x76543210
 #define MaxBlockHeight 6
 
-enum Refl_t { DIFF, METAL, SPEC, REFR, COAT };  // material types
 
 // CUDA textures containing scene data
-texture<float4, 1, cudaReadModeElementType> bvhNodesTexture;
-//texture<float4, 1, cudaReadModeElementType> triWoopTexture;
-texture<float4, 1, cudaReadModeElementType> triNormalsTexture;
-texture<int, 1, cudaReadModeElementType> triIndicesTexture;
 texture<float4, 1, cudaReadModeElementType> HDRtexture;
 
 __device__ inline Vec3f absmax3f(const Vec3f& v1, const Vec3f& v2){
@@ -121,7 +116,7 @@ __device__ Vec3f intersectRayTriangle(const Vec3f& v0, const Vec3f& v1, const Ve
 // modified intersection routine (uses regular instead of woopified triangles) for debugging purposes
 
 __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4 raydir,
-	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices,
+	const float4* gpuNodes, const float4* gpuTriNormal, const float4* gpuDebugTris, const int* gpuTriIndices,
 	int& hitTriIdx, float& hitdistance, int& debugbingo, Vec3f& trinormal, int leafcount, int tricount, bool needClosestHit){
 
 	int traversalStack[STACK_SIZE];
@@ -287,9 +282,9 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 				float4 v1f = gpuDebugTris[triAddr + 1];
 				float4 v2f = gpuDebugTris[triAddr + 2];
 
-                float4 n0f = gpuTriWoops[triAddr + 0];
-                float4 n1f = gpuTriWoops[triAddr + 1];
-				float4 n2f = gpuTriWoops[triAddr + 2];
+                float4 n0f = gpuTriNormal[triAddr + 0];
+                float4 n1f = gpuTriNormal[triAddr + 1];
+				float4 n2f = gpuTriNormal[triAddr + 2];
 
 				const Vec3f v0 = Vec3f(v0f.x, v0f.y, v0f.z);
 				const Vec3f v1 = Vec3f(v1f.x, v1f.y, v1f.z);
@@ -355,12 +350,12 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 }
 
 __device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
-	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices, 
+	const float4* gpuNodes, const float4* gpuTriNormal, const float4* gpuDebugTris, const int* gpuTriIndices, 
 	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, Vec3f& tribary, int leafcount, int tricount, bool anyHit)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	// global threadId, see richiesams blogspot
-	int thread_index = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
+	//int thread_index = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	///////////////////////////////////////////
 	//// FERMI / KEPLER KERNEL
@@ -374,9 +369,7 @@ __device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydi
 	int traversalStack[STACK_SIZE];
 	// Live state during traversal, stored in registers.
 
-	int		rayidx;		// not used, can be removed
 	float   origx, origy, origz;    // Ray origin.
-	float   dirx, diry, dirz;       // Ray direction.
 	float   tmin;                   // t-value from which the ray starts. Usually 0.
 	float   idirx, idiry, idirz;    // 1 / ray direction
 	float   oodx, oody, oodz;       // ray origin / ray direction
@@ -411,9 +404,6 @@ __device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydi
 		origx = rayorig.x;
 		origy = rayorig.y;
 		origz = rayorig.z;
-		dirx = raydir.x;
-		diry = raydir.y;
-		dirz = raydir.z;
 		tmin = rayorig.w;
 
 		// ooeps is very small number, used instead of raydir xyz component when that component is near zero
@@ -580,9 +570,9 @@ __device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydi
 				float4 v1f = gpuDebugTris[triAddr + 1];
 				float4 v2f = gpuDebugTris[triAddr + 2];
 
-                float4 n0f = gpuTriWoops[triAddr + 0];
-                float4 n1f = gpuTriWoops[triAddr + 1];
-				float4 n2f = gpuTriWoops[triAddr + 2];
+                float4 n0f = gpuTriNormal[triAddr + 0];
+                float4 n1f = gpuTriNormal[triAddr + 1];
+				float4 n2f = gpuTriNormal[triAddr + 2];
 
 				const Vec3f v0 = Vec3f(v0f.x, v0f.y, v0f.z);
 				const Vec3f v1 = Vec3f(v1f.x, v1f.y, v1f.z);
@@ -665,7 +655,7 @@ union Colour  // 4 bytes = 4 chars = 1 float
 __device__ Vec3f GetTexel(float a_U, float a_V, const TextureCUDA *cr, const float4 *texdata)
 {
 	// fetch a bilinearly filtered texel
-	Vec3f ret;
+	Vec3f ret(0, 0, 0);
 	const float4 *texture = &texdata[cr->start_index];
 	a_U -= int(a_U);
 	a_V -= int(a_V);
@@ -697,8 +687,18 @@ __device__ Vec3f GetTexel(float a_U, float a_V, const TextureCUDA *cr, const flo
 	return ret;
 }
 
-__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *depth, float *eyecosdepth, float *materialID, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
+__device__ Vec3f GetTexColor(gpuData *gpudata, int triIdx, MaterialCUDA *material, Vec3f *bary)
+{
+	float tex_u, tex_v;
+	float4 uv0f = gpudata->cudaTriUVPtr[triIdx + 0];
+	float4 uv1f = gpudata->cudaTriUVPtr[triIdx + 1];
+	float4 uv2f = gpudata->cudaTriUVPtr[triIdx + 2];
+	tex_u = (1 - bary->y - bary->x) * uv0f.x + bary->x * uv1f.x + bary->y * uv2f.x;
+	tex_v = (1 - bary->y - bary->x) * uv0f.y + bary->x * uv1f.y + bary->y * uv2f.y;
+	return GetTexel(tex_u, tex_v, &gpudata->cudaTexturePtr[material->m_textureIndex], gpudata->cudaTextureData);
+}
+
+__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *materialID, gpuData *gpudata, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
@@ -706,11 +706,8 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 	bool lastmaterialisdiffuse = false; 
 	for (int bounces = 0; bounces < 4; bounces++){  // iteration up to 4 bounces (instead of recursion in CPU code)
 
-		int hitSphereIdx = -1;
-		int hitTriIdx = -1;
 		int bestTriIdx = -1;
 		int hitMaterial = -1;
-		float hitSphereDist = 1e20;
 		float hitDistance = 1e20;
 		float scene_t = 1e20;
 		Vec3f emit = Vec3f(0, 0, 0);
@@ -720,7 +717,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		Vec3f nextdir; // ray direction of next path segment
 		Vec3f trinormal = Vec3f(0, 0, 0);
 		Vec3f ng = Vec3f(0, 0, 0);
-		Refl_t refltype;
 		float ray_tmin = 0.00001f; // set to 0.01f when using refractive material
 		float ray_tmax = 1e20;
 		MaterialCUDA material;
@@ -734,7 +730,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 
 		Vec3f bary(0, 0, 0);
 		intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
-		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, bary, leafcount, tricount, false);
+		gpudata->cudaNodePtr, gpudata->cudaTriNormalPtr, gpudata->cudaTriDebugPtr, gpudata->cudaTriIndicesPtr, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, bary, leafcount, tricount, false);
 
 
 		// intersect all spheres in the scene
@@ -746,7 +742,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		if (hitDistance < scene_t && hitDistance > ray_tmin) // triangle hit
 		{
 			scene_t = hitDistance;
-			hitTriIdx = bestTriIdx;
 		}
 
 		// sky gradient colour
@@ -770,30 +765,30 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
 			// Convert (normalized) dir to spherical coordinates.
-			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			//
-			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			//float offsetY = 0.5f;
-			//float u = longlatX / TWO_PI; // +offsetY;
-			//float v = longlatY / M_PI ; 
+			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			
+			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			float offsetY = 0.5f;
+			float u = longlatX / TWO_PI; // +offsetY;
+			float v = longlatY / M_PI ; 
 
-			//// map u, v to integer coordinates
-			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			//int v2 = (int)(v * HDRheight); // % HDRheight;
+			// map u, v to integer coordinates
+			int u2 = (int)(u * HDRwidth); //% HDRwidth;
+			int v2 = (int)(v * HDRheight); // % HDRheight;
 
-			//// compute the texel index in the HDR map 
-			//int HDRtexelidx = u2 + v2 * HDRwidth;
-			////int index = u2 + v2 * g_texCuda.width;
+			// compute the texel index in the HDR map 
+			int HDRtexelidx = u2 + v2 * HDRwidth;
+			//int index = u2 + v2 * g_texCuda.width;
 
-			////float4 HDRcol = HDRmap[HDRtexelidx];
-			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			////float4 HDRcol = g_texCuda.Fetch(index);
-			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
+			//float4 HDRcol = HDRmap[HDRtexelidx];
+			float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			//float4 HDRcol = g_texCuda.Fetch(index);
+			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			//Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
 
-			emit = HDRcol2 * 2.0f;
+			emit = HDRcol2 * 0.2f;
 			accucolor += (mask * emit); 
 			return accucolor; 
 		}
@@ -801,7 +796,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 #endif // end of HDR
 
 		// TRIANGLES:
-		material = mats[hitMaterial];
+		material = gpudata->cudaMaterialsPtr[hitMaterial];
 		//pBestTri = &pTriangles[triangle_id];
 		hitpoint = rayorig + raydir * scene_t; // intersection point
 					
@@ -809,9 +804,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		n = trinormal;
 		n.normalize();
 		nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
-		//Vec3f colour = hitTriIdx->_colorf;
-		//Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
-		refltype = DIFF; // objectmaterial
 		//objcol = colour;
 		emit = Vec3f(0.0, 0.0, 0);  // object emission
 		accucolor += (mask * emit);
@@ -820,8 +812,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		if (bounces == 0)
 		{
 			*normal = Vec3f(n.x, n.y, n.z);
-			*depth = hitDistance;
-			*eyecosdepth = - hitDistance * abs(dot(*normal, raydir.normalize()));
 			*materialID = hitMaterial;
 		}
 
@@ -894,13 +884,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 					}
 					else
 					{
-						float tex_u, tex_v;
-						float4 uv0f = uv[bestTriIdx + 0];
-						float4 uv1f = uv[bestTriIdx + 1];
-						float4 uv2f = uv[bestTriIdx + 2];
-						tex_u = (1 - bary.y - bary.x) * uv0f.x + bary.x * uv1f.x + bary.y * uv2f.x;
-						tex_v = (1 - bary.y - bary.x) * uv0f.y + bary.x * uv1f.y + bary.y * uv2f.y;
-						Vec3f t = GetTexel(tex_u, tex_v, &tex[material.m_textureIndex], texdata);
+						Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
 						mask *= t;
 					}
 
@@ -932,14 +916,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 				}
 				else
 				{
-					float tex_u, tex_v;
-					//printf("bestTriIdx: %d\n", bestTriIdx);
-					float4 uv0f = uv[bestTriIdx + 0];
-					float4 uv1f = uv[bestTriIdx + 1];
-					float4 uv2f = uv[bestTriIdx + 2];
-					tex_u = (1 - bary.y - bary.x) * uv0f.x + bary.x * uv1f.x + bary.y * uv2f.x;
-					tex_v = (1 - bary.y - bary.x) * uv0f.y + bary.x * uv1f.y + bary.y * uv2f.y;
-					Vec3f t = GetTexel(tex_u, tex_v, &tex[material.m_textureIndex], texdata);
+					Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
 					mask *= t;
 				}
 
@@ -1009,17 +986,14 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 	return accucolor;
 }
 
-__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
-	unsigned int tricount, const Camera* cudaRendercam) 
+__global__ void PathTracingKernel(Vec3f* output, gpuData *gpudata, const float4* HDRmap, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
+	unsigned int tricount) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	float depth;
 	Vec3f normal = Vec3f(0, 0, 0);
 	float materialID;
-	float eyecosdepth;
 
 	// global threadId, see richiesams blogspot
 	int threadId = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
@@ -1033,14 +1007,14 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	Vec3f finalcol; // final pixel colour 
 	finalcol = Vec3f(0.0f, 0.0f, 0.0f); // reset colour to zero for every pixel	
 	//Vec3f rendercampos = Vec3f(0, 0.2, 4.6f); 
-	Vec3f rendercampos = Vec3f(cudaRendercam->position.x, cudaRendercam->position.y, cudaRendercam->position.z);
+	Vec3f rendercampos = Vec3f(gpudata->cudaRendercam->position.x, gpudata->cudaRendercam->position.y, gpudata->cudaRendercam->position.z);
 
-	int i = (cudaRendercam->resolution.y - y - 1) * cudaRendercam->resolution.x + x; // pixel index in buffer	
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x; // pixel index in buffer	
 	int pixelx = x; // pixel x-coordinate on screen
-	int pixely = cudaRendercam->resolution.y - y - 1; // pixel y-coordintate on screen
+	int pixely = gpudata->cudaRendercam->resolution.y - y - 1; // pixel y-coordintate on screen
 
 	Vec3f camdir = Vec3f(0, -0.042612, -1); camdir.normalize();
-	Vec3f cx = Vec3f(cudaRendercam->resolution.x * .5135f / cudaRendercam->resolution.y, 0.0f, 0.0f);  // ray direction offset along X-axis 
+	Vec3f cx = Vec3f(gpudata->cudaRendercam->resolution.x * .5135f / gpudata->cudaRendercam->resolution.y, 0.0f, 0.0f);  // ray direction offset along X-axis 
 	Vec3f cy = (cross(cx, camdir)).normalize() * .5135f; // ray dir offset along Y-axis, .5135 is FOV angle
 
 
@@ -1048,14 +1022,14 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 
 		// compute primary ray direction
 		// use camera view of current frame (transformed on CPU side) to create local orthonormal basis
-		Vec3f rendercamview = Vec3f(cudaRendercam->view.x, cudaRendercam->view.y, cudaRendercam->view.z); rendercamview.normalize(); // view is already supposed to be normalized, but normalize it explicitly just in case.
-		Vec3f rendercamup = Vec3f(cudaRendercam->up.x, cudaRendercam->up.y, cudaRendercam->up.z); rendercamup.normalize();
+		Vec3f rendercamview = Vec3f(gpudata->cudaRendercam->view.x, gpudata->cudaRendercam->view.y, gpudata->cudaRendercam->view.z); rendercamview.normalize(); // view is already supposed to be normalized, but normalize it explicitly just in case.
+		Vec3f rendercamup = Vec3f(gpudata->cudaRendercam->up.x, gpudata->cudaRendercam->up.y, gpudata->cudaRendercam->up.z); rendercamup.normalize();
 		Vec3f horizontalAxis = cross(rendercamview, rendercamup); horizontalAxis.normalize(); // Important to normalize!
 		Vec3f verticalAxis = cross(horizontalAxis, rendercamview); verticalAxis.normalize(); // verticalAxis is normalized by default, but normalize it explicitly just for good measure.
 
 		Vec3f middle = rendercampos + rendercamview; 
-		Vec3f horizontal = horizontalAxis * tanf(cudaRendercam->fov.x * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
-		Vec3f vertical = verticalAxis * tanf(-cudaRendercam->fov.y * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
+		Vec3f horizontal = horizontalAxis * tanf(gpudata->cudaRendercam->fov.x * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
+		Vec3f vertical = verticalAxis * tanf(-gpudata->cudaRendercam->fov.y * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
 
 		// anti-aliasing
 		// calculate center of current pixel and add random number in X and Y dimension
@@ -1063,19 +1037,19 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 		
 		 float jitterValueX = curand_uniform(&randState) - 0.5;
 		 float jitterValueY = curand_uniform(&randState) - 0.5;
-		 float sx = (jitterValueX + pixelx) / (cudaRendercam->resolution.x - 1);
-		 float sy = (jitterValueY + pixely) / (cudaRendercam->resolution.y - 1);
+		 float sx = (jitterValueX + pixelx) / (gpudata->cudaRendercam->resolution.x - 1);
+		 float sy = (jitterValueY + pixely) / (gpudata->cudaRendercam->resolution.y - 1);
 
 		// compute pixel on screen
 		Vec3f pointOnPlaneOneUnitAwayFromEye = middle + (horizontal * ((2 * sx) - 1)) + (vertical * ((2 * sy) - 1));
-		Vec3f pointOnImagePlane = rendercampos + ((pointOnPlaneOneUnitAwayFromEye - rendercampos) * cudaRendercam->focalDistance); // Important for depth of field!		
+		Vec3f pointOnImagePlane = rendercampos + ((pointOnPlaneOneUnitAwayFromEye - rendercampos) * gpudata->cudaRendercam->focalDistance); // Important for depth of field!		
 																											
 		// calculation of depth of field / camera aperture 
 		// based on https://github.com/peterkutz/GPUPathTracer 
 
 		Vec3f aperturePoint = Vec3f(0, 0, 0);
 
-		if (cudaRendercam->apertureRadius > 0.00001) { // the small number is an epsilon value.
+		if (gpudata->cudaRendercam->apertureRadius > 0.00001) { // the small number is an epsilon value.
 
 			// generate random numbers for sampling a point on the aperture
 			float random1 = curand_uniform(&randState);
@@ -1083,7 +1057,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 
 			// randomly pick a point on the circular aperture
 			float angle = TWO_PI * random1;
-			float distance = cudaRendercam->apertureRadius * sqrtf(random2);
+			float distance = gpudata->cudaRendercam->apertureRadius * sqrtf(random2);
 			float apertureX = cos(angle) * distance;
 			float apertureY = sin(angle) * distance;
 
@@ -1104,33 +1078,32 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, &normal, &depth, &eyecosdepth, &materialID, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats, tex, texdata, uv,
-				originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
+		finalcol += renderKernel(&randState, HDRmap, &normal, &materialID, gpudata, 
+			originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
 	// add pixel colour to accumulation buffer (accumulates all samples) 
-	accumbuffer[i] += finalcol;
+	gpudata->accumulatebuffer[i] += finalcol;
 
 	// get depth and normal
-	//depthbuffer[i] = depth;
-	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
-	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
+	gpudata->normalbuffer[i] = gpudata->normalbuffer[i] * (framenumber - 1) / framenumber + normal / framenumber;
+	gpudata->materialbuffer[i] = gpudata->materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
 }
 
-__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+__global__ void FilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
-	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
 	//if (x > cudaRenderCam->resolution.x / 2)
 	if (framenumber < 200)
 	//if (1)
 	{
-		ret_colour = accumbuffer[i];
+		ret_colour = gpudata->accumulatebuffer[i];
 	}
 	else
 	{
@@ -1138,25 +1111,22 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 		int index;
 		float weight;
 		int filter_window = winSize;
-		float pos_variance = pos_var;
-		float col_variance = col_var;
-		float dep_variance = dep_var;
 		for (int m = -filter_window; m <= filter_window; m++)
 		{
 			for (int n = -filter_window; n <= filter_window; n++)
 			{
-				int index_y = cudaRenderCam->resolution.y - y - n - 1;
+				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
 				int index_x = m + x;
-				if ((index_x < 0 || index_x >= cudaRenderCam->resolution.x || index_y < 0 || index_y >= cudaRenderCam->resolution.y))
+				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
 					continue;
-				index = index_y * cudaRenderCam->resolution.x + index_x;
-				weight = max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
-					(abs(materialbuffer[i] - materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
-					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
-					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
+				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
+				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+					exp(-(m*m + n*n) / (2.0f * pos_var)) *								
+					exp(-(gpudata->accumulatebuffer[i] - gpudata->accumulatebuffer[index]).lengthsq() / (2.0f * col_var));												
 
 				weight_total += weight;
-				ret_colour += accumbuffer[index] * weight;
+				ret_colour += gpudata->accumulatebuffer[index] * weight;
 			}
 		}
 		ret_colour /= weight_total;
@@ -1191,30 +1161,18 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
-void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats, const TextureCUDA *tex, const float4* texdata, const float4 *uv,
-	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var){
+void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
+	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp){
 
 	if (firstTime) {
 		// if this is the first time cudarender() is called,
 		// bind the scene data to CUDA textures!
 		firstTime = false;
 		
-		cudaChannelFormatDesc channel0desc = cudaCreateChannelDesc<int>();
-		cudaBindTexture(NULL, &triIndicesTexture, triInds, &channel0desc, (tricnt * 3 + leafnodecnt) * sizeof(int));  // is tricnt wel juist??
-
-		//cudaChannelFormatDesc channel1desc = cudaCreateChannelDesc<float4>();
-		//cudaBindTexture(NULL, &triWoopTexture, triWoops, &channel1desc, (tricnt * 3 + leafnodecnt) * sizeof(float4));
-
-		cudaChannelFormatDesc channel3desc = cudaCreateChannelDesc<float4>();
-		cudaBindTexture(NULL, &bvhNodesTexture, nodes, &channel3desc, nodeSize * 5 * sizeof(float4));  /// 5 is niet goed
-
 		HDRtexture.filterMode = cudaFilterModeLinear;
 
 		cudaChannelFormatDesc channel4desc = cudaCreateChannelDesc<float4>(); 
 		cudaBindTexture(NULL, &HDRtexture, HDRmap, &channel4desc, HDRwidth * HDRheight * sizeof(float4));  // 2k map:
-
-		printf("CudaWoopTriangles texture initialised, tri count: %d\n", tricnt);
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors
@@ -1223,12 +1181,12 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	// Configure grid and block sizes:
 	int threadsPerBlock = 256;
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
-	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
+	//int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
+	
 	// <<<fullBlocksPerGrid, threadsPerBlock>>>
-
-	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
-		triInds, mats, tex, texdata, uv, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
+	
+	PathTracingKernel <<<grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
-	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);
+	FilterKernel <<<grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col, cp->m_variance_dep);
 }

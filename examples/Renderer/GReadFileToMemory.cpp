@@ -75,7 +75,7 @@ int MemoryFile::Readint()
 		++pointer;
 		++i;
 	}
-	return float(atoi(szint));
+	return atoi(szint);
 }
 
 void MemoryFile::IgnoreUntilchar(char c)

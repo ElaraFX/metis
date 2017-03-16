@@ -7,9 +7,10 @@
 #include "linear_math.h"
 #include "Util.h"
 #include "MMaterial.h"
+#include "RenderData.h"
 
 
-class Camera;
+struct Camera;
 class CudaBVH;
 struct TextureCUDA;
 
@@ -23,8 +24,8 @@ public:
     void initCUDAscenedata();
     void deleteCudaAndCpuMemory();
     void createBVH();
-    void loadBVHfromCache(FILE* BVHcachefile, const std::string BVHcacheFilename);
-    void writeBVHcachefile(FILE* BVHcachefile, const std::string BVHcacheFilename);
+    //void loadBVHfromCache(FILE* BVHcachefile, const std::string BVHcacheFilename);
+    //void writeBVHcachefile(FILE* BVHcachefile, const std::string BVHcacheFilename);
     void initHDR();
 
 	void ProfilerBegin();
@@ -53,24 +54,10 @@ private:
 
     GLuint m_vbo;
 
-    float4* cudaNodePtr;
-    float4* cudaTriWoopPtr;
-    float4* cudaTriDebugPtr;
-    float4* cudaTriUVPtr;
-    float4* cudaTriNormalPtr;
-    S32*    cudaTriIndicesPtr;
-	MaterialCUDA* cudaMaterialsPtr;
-	TextureCUDA* cudaTexturePtr;
-	float4* cudaTextureData;
-
-    Camera* cudaRendercam;
+	gpuData* m_gpu_data;
+	gpuData* m_host_gpu_data;
     Camera* hostRendercam;
-    Vec3f* accumulatebuffer; // image buffer storing accumulated pixel samples
-    Vec3f* normalbuffer;	// stores ray intersect normal per pixel samples
 	Vec3f* finaloutputbuffer; // stores averaged pixel samples
-    float* depthbuffer; // stores ray intersect depth per pixel samples
-    float* eyecosdepthbuffer; // stores ray intersect depth with eye ray cos per pixel samples
-    float* materialbuffer; // stores ray intersect material per pixel samples
     float4* gpuHDRenv;
     Vec4f* cpuHDRenv;
     Vec4f* m_triNormals;
@@ -78,28 +65,16 @@ private:
 
     int framenumber;
     int nodeSize;
-    int leafnode_count;
-    int triangle_count;
-    int triWoopSize;
-    int triDebugSize;
-    int triUVSize;
-    int triIndicesSize;
-    float scalefactor;
-    bool nocachedBVH;
 	
     const char* mtlfile;
     const char* scenefile; 
     const char* HDRmapname;
 
-    int				m_frame;
 	int				m_interval;
 	bool			m_firsttime;
 	LARGE_INTEGER	m_t1, m_t2, m_tc;
 
     QPoint lastPos;
 
-	int	m_windowSize;
-	float m_variance_pos;
-	float m_variance_col;
-	float m_variance_dep;
+	controlParam cp;
 };
