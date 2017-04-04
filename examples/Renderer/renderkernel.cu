@@ -698,12 +698,21 @@ __device__ Vec3f GetTexColor(gpuData *gpudata, int triIdx, MaterialCUDA *materia
 	return GetTexel(tex_u, tex_v, &gpudata->cudaTexturePtr[material->m_textureIndex], gpudata->cudaTextureData);
 }
 
-__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *materialID, gpuData *gpudata, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
+__device__ void GetRidofZero(Vec3f& v)
+{
+	const float EPSILON = 0.00001f;
+	if (v.x < EPSILON) v.x = EPSILON;
+	if (v.y < EPSILON) v.y = EPSILON;
+	if (v.z < EPSILON) v.z = EPSILON;
+}
+
+__device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const float4* HDRmap, Vec3f* normal, float *materialID, gpuData *gpudata, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
-	Vec3f direct = Vec3f(0, 0, 0);
+	Vec3f directillumination = Vec3f(1.0f, 1.0f, 1.0f);
 	bool lastmaterialisdiffuse = false; 
+	bool firstbouncespecularcolor = false;
 	for (int bounces = 0; bounces < 4; bounces++){  // iteration up to 4 bounces (instead of recursion in CPU code)
 
 		int bestTriIdx = -1;
@@ -765,31 +774,49 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
 			// Convert (normalized) dir to spherical coordinates.
-			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			
-			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			float offsetY = 0.5f;
-			float u = longlatX / TWO_PI; // +offsetY;
-			float v = longlatY / M_PI ; 
+			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			//
+			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			//float offsetY = 0.5f;
+			//float u = longlatX / TWO_PI; // +offsetY;
+			//float v = longlatY / M_PI ; 
 
-			// map u, v to integer coordinates
-			int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			int v2 = (int)(v * HDRheight); // % HDRheight;
+			//// map u, v to integer coordinates
+			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * HDRheight); // % HDRheight;
 
-			// compute the texel index in the HDR map 
-			int HDRtexelidx = u2 + v2 * HDRwidth;
-			//int index = u2 + v2 * g_texCuda.width;
+			//// compute the texel index in the HDR map 
+			//int HDRtexelidx = u2 + v2 * HDRwidth;
+			////int index = u2 + v2 * g_texCuda.width;
 
-			//float4 HDRcol = HDRmap[HDRtexelidx];
-			float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			//float4 HDRcol = g_texCuda.Fetch(index);
-			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			//Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
+			////float4 HDRcol = HDRmap[HDRtexelidx];
+			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			////float4 HDRcol = g_texCuda.Fetch(index);
+			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
 
-			emit = HDRcol2 * 0.2f;
+			emit = HDRcol2 * 1.0f;
 			accucolor += (mask * emit); 
+			if (bounces == 0)
+			{
+				gpudata->AOVdirectdiffuse[pixel_index] += accucolor;
+				gpudata->AOVindirectdiffuse[pixel_index] += Vec3f(1.0f, 1.0f, 1.0f);
+				gpudata->AOVindirectspecular[pixel_index] += Vec3f(0.0f, 0.0f, 0.0f);
+				gpudata->AOVdiffusecount[pixel_index] += 1;
+			}
+			else
+			{
+				if (!firstbouncespecularcolor)
+				{
+					gpudata->AOVindirectdiffuse[pixel_index] += accucolor / directillumination;
+				}
+				else
+				{
+					gpudata->AOVindirectspecular[pixel_index] += accucolor / directillumination;
+				}
+			}
 			return accucolor; 
 		}
 
@@ -823,14 +850,16 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			float rouletteRandomFloat = curand_uniform(randstate);
 			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z)
 			{
-				
 				float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
 				float ddn = -dot(raydir, nl);
 		        
 				float reflect = powf(1.0f - ddn, nt);
 		        if (reflect > rouletteRandomFloat) // total internal reflection 
 		        {
-					if (lastmaterialisdiffuse) break;
+					if (lastmaterialisdiffuse) 
+					{
+						break;
+					}
 					nextdir = raydir - n * 2.0f * dot(n, raydir);
 					nextdir.normalize();
 					float phi = 2 * M_PI * curand_uniform(randstate);
@@ -858,6 +887,14 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 					hitpoint += nl * 0.001f; // scene size dependent
 
 					lastmaterialisdiffuse = false;
+
+					if (bounces == 0)
+					{
+						gpudata->AOVspecular[pixel_index] += mask;
+						firstbouncespecularcolor = true;
+						directillumination = mask;
+						GetRidofZero(directillumination);
+					}
 				}
 				else
 				{
@@ -887,8 +924,15 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 						Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
 						mask *= t;
 					}
-
+					
 					lastmaterialisdiffuse = true;
+					if (bounces == 0)
+					{
+						gpudata->AOVdirectdiffuse[pixel_index] += mask;
+						gpudata->AOVdiffusecount[pixel_index] += 1;
+						directillumination = mask;
+						GetRidofZero(directillumination);
+					}
 				}
 			}
 			else
@@ -919,8 +963,15 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 					Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
 					mask *= t;
 				}
-
+				
 				lastmaterialisdiffuse = true;
+				if (bounces == 0)
+				{
+					gpudata->AOVdirectdiffuse[pixel_index] += mask;
+					gpudata->AOVdiffusecount[pixel_index] += 1;
+					directillumination = mask;
+					GetRidofZero(directillumination);
+				}
 			}
 		} // end COAT
 
@@ -982,6 +1033,15 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		rayorig = hitpoint; 
 		raydir = nextdir; 
 	} // end bounces for loop
+
+	if (!firstbouncespecularcolor)
+	{
+		gpudata->AOVindirectdiffuse[pixel_index] += accucolor / directillumination;
+	}
+	else
+	{
+		gpudata->AOVindirectspecular[pixel_index] += accucolor / directillumination;
+	}
 
 	return accucolor;
 }
@@ -1078,7 +1138,7 @@ __global__ void PathTracingKernel(Vec3f* output, gpuData *gpudata, const float4*
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, &normal, &materialID, gpudata, 
+		finalcol += renderKernel(i, &randState, HDRmap, &normal, &materialID, gpudata, 
 			originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
@@ -1099,9 +1159,7 @@ __global__ void FilterKernel(Vec3f* output, gpuData *gpudata, unsigned int frame
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
-	//if (x > cudaRenderCam->resolution.x / 2)
 	if (framenumber < 200)
-	//if (1)
 	{
 		ret_colour = gpudata->accumulatebuffer[i];
 	}
@@ -1158,6 +1216,103 @@ __global__ void FilterKernel(Vec3f* output, gpuData *gpudata, unsigned int frame
 	output[i] = Vec3f(x, y, fcolour.c);
 }
 
+__global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+{
+	// assign a CUDA thread to every pixel by using the threadIndex
+	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+	
+	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
+	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
+	//if (x > gpudata->cudaRendercam->resolution.x / 2)
+	if (framenumber < 200)
+	{
+		ret_colour = gpudata->accumulatebuffer[i];
+	}
+	else
+	{
+		Vec3f indirectdiffuse(0, 0, 0);
+		Vec3f indirectspecular(0, 0, 0);
+		float weight_total_diffuse = 0, weight_total_specular = 0;
+		int index;
+		float weight;
+		int filter_window = winSize;
+		// diffuse filter
+		for (int m = -filter_window; m <= filter_window; m++)
+		{
+			for (int n = -filter_window; n <= filter_window; n++)
+			{
+				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+				int index_x = m + x;
+				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+					continue;
+				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
+
+				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+					exp(-(m*m + n*n) / (2.0f * pos_var)) *							
+					exp(-(gpudata->AOVindirectdiffuse[i] - gpudata->AOVindirectdiffuse[index]).lengthsq() / (2.0f * col_var));												
+
+				weight_total_diffuse += weight;
+				indirectdiffuse += gpudata->AOVindirectdiffuse[index] * weight;
+			}
+		}
+		indirectdiffuse /= weight_total_diffuse;
+		
+		// specular filter
+		filter_window /= 5;
+		if (filter_window == 0) filter_window = 1;
+		for (int m = -filter_window; m <= filter_window; m++)
+		{
+			for (int n = -filter_window; n <= filter_window; n++)
+			{
+				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+				int index_x = m + x;
+				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+					continue;
+				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
+
+				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+					exp(-(m*m + n*n) / (2.0f * pos_var)) *								
+					exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / col_var);												
+
+				weight_total_specular += weight;
+				indirectspecular += gpudata->AOVindirectspecular[index] * weight;
+			}
+		}
+		indirectspecular /= weight_total_specular;
+
+		float diffseweight = (gpudata->AOVdiffusecount[i] == 0) ? 0 : 1.0f / gpudata->AOVdiffusecount[i];
+		float specularweight = ((framenumber - gpudata->AOVdiffusecount[i]) == 0) ? 0 : 1.0f / (framenumber - gpudata->AOVdiffusecount[i]);
+		ret_colour = gpudata->AOVdirectdiffuse[i] * indirectdiffuse * diffseweight + gpudata->AOVspecular[i] * indirectspecular * specularweight;
+	}
+
+	Vec3f tempcol = ret_colour / framenumber;
+
+	tempcol *= 8.0f;
+
+	tempcol.x = tempcol.x / (tempcol.x + 1.0f); 
+	tempcol.y = tempcol.y / (tempcol.y + 1.0f); 
+	tempcol.z = tempcol.z / (tempcol.z + 1.0f); 
+
+	Colour fcolour;
+	Vec3f colour = tempcol;
+	
+	// convert from 96-bit to 24-bit colour + perform gamma correction
+	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
+										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+
+		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
+		//								(unsigned char)(colour.y* 255), 
+		//								(unsigned char)(colour.z* 255), 1);
+	
+	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
+	output[i] = Vec3f(x, y, fcolour.c);
+}
+
 bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
@@ -1188,5 +1343,5 @@ void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const flo
 	PathTracingKernel <<<grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
 
 	cudaThreadSynchronize();
-	FilterKernel <<<grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col, cp->m_variance_dep);
+	newFilterKernel <<<grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col, cp->m_variance_dep);
 }

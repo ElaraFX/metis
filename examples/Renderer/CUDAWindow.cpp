@@ -32,16 +32,16 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     gpuBVH = NULL;
 
     framenumber = 0;
-	m_interval = 40;
+	m_interval = 50;
 	m_firsttime = true;
 
-	cp.m_windowSize = 15;
+	cp.m_windowSize = 10;
 	cp.m_variance_pos = 100;
 	cp.m_variance_col = 40;
 	cp.m_variance_dep = 100;
 
-	mtlfile = "data/teapot1.mtl";
-    scenefile = "data/teapot1.obj"; 
+	mtlfile = "data/class2.mtl";
+    scenefile = "data/class2.obj"; 
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -178,6 +178,11 @@ void TriangleWindow::initCUDAscenedata()
 	//cudaMalloc((void**)&m_gpu_data, sizeof(gpuData));
 	m_host_gpu_data = new gpuData();
     cudaMalloc(&m_host_gpu_data->accumulatebuffer, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->AOVdirectdiffuse, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->AOVdiffusecount, width() * height() * sizeof(float));
+    cudaMalloc(&m_host_gpu_data->AOVindirectdiffuse, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->AOVindirectspecular, width() * height() * sizeof(Vec3f));
+    cudaMalloc(&m_host_gpu_data->AOVspecular, width() * height() * sizeof(Vec3f));
     cudaMalloc(&m_host_gpu_data->normalbuffer, width() * height() * sizeof(Vec3f));
     cudaMalloc(&m_host_gpu_data->materialbuffer, width() * height() * sizeof(float));
 
@@ -287,9 +292,14 @@ void TriangleWindow::paintGL()
 
     // if camera has moved, reset the accumulation buffer
     if (buffer_reset){
-		cudaMemset(m_host_gpu_data->accumulatebuffer, 1, width() * height() * sizeof(Vec3f)); 
-		cudaMemset(m_host_gpu_data->materialbuffer, 1, width() * height() * sizeof(float)); 
-		cudaMemset(m_host_gpu_data->normalbuffer, 1, width() * height() * sizeof(Vec3f)); 
+		cudaMemset(m_host_gpu_data->accumulatebuffer, 0, width() * height() * sizeof(Vec3f));
+		cudaMemset(m_host_gpu_data->AOVdirectdiffuse, 0, width() * height() * sizeof(Vec3f)); 
+		cudaMemset(m_host_gpu_data->AOVdiffusecount, 0, width() * height() * sizeof(float)); 
+		cudaMemset(m_host_gpu_data->AOVindirectdiffuse, 0, width() * height() * sizeof(Vec3f));
+		cudaMemset(m_host_gpu_data->AOVindirectspecular, 0, width() * height() * sizeof(Vec3f));
+		cudaMemset(m_host_gpu_data->AOVspecular, 0, width() * height() * sizeof(Vec3f));
+		cudaMemset(m_host_gpu_data->materialbuffer, 0, width() * height() * sizeof(float)); 
+		cudaMemset(m_host_gpu_data->normalbuffer, 0, width() * height() * sizeof(Vec3f)); 
 		framenumber = 0; 
 	}
 

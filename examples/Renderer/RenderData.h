@@ -29,6 +29,11 @@ struct gpuData
 	float4* cudaTextureData;
 	Camera* cudaRendercam;
 	Vec3f* accumulatebuffer; // image buffer storing accumulated pixel samples
+	Vec3f* AOVdirectdiffuse; 
+	float* AOVdiffusecount; 
+	Vec3f* AOVspecular; 
+	Vec3f* AOVindirectdiffuse; 
+	Vec3f* AOVindirectspecular; 
     Vec3f* normalbuffer;	// stores ray intersect normal per pixel samples
     float* materialbuffer; // stores ray intersect material per pixel samples
 	gpuData()
@@ -43,6 +48,11 @@ struct gpuData
 		cudaTextureData = NULL;
 		cudaRendercam = NULL;
 		accumulatebuffer = NULL; // image buffer storing accumulated pixel samples
+		AOVdirectdiffuse = NULL;
+		AOVdiffusecount = NULL;
+		AOVspecular = NULL;
+		AOVindirectdiffuse = NULL;
+		AOVindirectspecular = NULL;
 		normalbuffer = NULL;
 		materialbuffer = NULL;
 	}
@@ -58,6 +68,11 @@ struct gpuData
 		cudaFree(cudaTextureData);
 		cudaFree(cudaRendercam);
 		cudaFree(accumulatebuffer);
+		cudaFree(AOVdirectdiffuse);
+		cudaFree(AOVdiffusecount);
+		cudaFree(AOVspecular);
+		cudaFree(AOVindirectdiffuse);
+		cudaFree(AOVindirectspecular);
 		cudaFree(normalbuffer);
 		cudaFree(materialbuffer);
 	}

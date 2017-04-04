@@ -138,7 +138,7 @@ MainWindow::MainWindow(QWidget *parent)
 	fileToolBar->addWidget(m_varianceColSpin);
 	fileToolBar->addWidget(m_varianceDepSpin);
 
-	m_filterSizeSpin->setValue(15);
+	m_filterSizeSpin->setValue(10);
 	m_variancePosSpin->setRange(0, 9999999);
 	m_variancePosSpin->setValue(100);
 	m_varianceColSpin->setRange(0, 9999999);
