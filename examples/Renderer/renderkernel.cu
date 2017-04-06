@@ -844,97 +844,57 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 		// randomly select diffuse or specular reflection
 		// looks okay-ish but inaccurate (no Fresnel calculation yet)
 		{
-
 			float rouletteRandomFloat = curand_uniform(randstate);
-			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z)
+			float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
+			float ddn = -dot(raydir, nl);
+			float reflect = powf(1.0f - ddn, nt);
+			
+			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z && reflect > rouletteRandomFloat)
 			{
-				float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
-				float ddn = -dot(raydir, nl);
-		        
-				float reflect = powf(1.0f - ddn, nt);
-		        if (reflect > rouletteRandomFloat) // total internal reflection 
-		        {
-					if (lastmaterialisdiffuse) 
-					{
-						break;
-					}
-					nextdir = raydir - n * 2.0f * dot(n, raydir);
-					nextdir.normalize();
-					float phi = 2 * M_PI * curand_uniform(randstate);
-					float r2 = curand_uniform(randstate);
-					float phongexponent = material.m_glossiness;
-					float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
-					float sinTheta = sqrtf(1 - cosTheta * cosTheta);
-
-					// create orthonormal basis uvw around reflection vector with hitpoint as origin 
-					// w is ray direction for ideal reflection
-					Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
-					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-					Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
-
-					// compute cosine weighted random ray direction on hemisphere 
-					nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
-					nextdir.normalize();
-
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.0001f;  // scene size dependent
-
-					// multiply mask with colour of object
-					mask *= material.m_SpecColorReflect;
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.001f; // scene size dependent
-
-					lastmaterialisdiffuse = false;
-
-					if (bounces == 0)
-					{
-						gpudata->AOVspecular[pixel_index] += mask;
-						firstbouncespecularcolor = true;
-						directillumination = mask;
-						GetRidofZero(directillumination);
-					}
-				}
-				else
+				// specular path
+				if (lastmaterialisdiffuse) 
 				{
-					float r1 = 2 * M_PI * curand_uniform(randstate);
-					float r2 = curand_uniform(randstate);
-					float r2s = sqrtf(r2);
+					break;
+				}
+				nextdir = raydir - n * 2.0f * dot(n, raydir);
+				nextdir.normalize();
+				float phi = 2 * M_PI * curand_uniform(randstate);
+				float r2 = curand_uniform(randstate);
+				float phongexponent = material.m_glossiness;
+				float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
+				float sinTheta = sqrtf(1 - cosTheta * cosTheta);
 
-					// compute orthonormal coordinate frame uvw with hitpoint as origin 
-					Vec3f w = nl; w.normalize();
-					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-					Vec3f v = cross(w, u);
+				// create orthonormal basis uvw around reflection vector with hitpoint as origin 
+				// w is ray direction for ideal reflection
+				Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
+				Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+				Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
 
-					// compute cosine weighted random ray direction on hemisphere 
-					nextdir = u*cosf(r1)*r2s + v*sinf(r1)*r2s + w*sqrtf(1 - r2);
-					nextdir.normalize();
+				// compute cosine weighted random ray direction on hemisphere 
+				nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
+				nextdir.normalize();
 
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.001f;  // // scene size dependent
+				// offset origin next path segment to prevent self intersection
+				hitpoint += nl * 0.0001f;  // scene size dependent
 
-					// multiply mask with colour of object
-					if (material.m_textureIndex == -1)
-					{
-						mask *= material.m_ColorReflect;
-					}
-					else
-					{
-						Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
-						mask *= material.m_ColorReflect * t;
-					}
-					
-					lastmaterialisdiffuse = true;
-					if (bounces == 0)
-					{
-						gpudata->AOVdirectdiffuse[pixel_index] += mask;
-						gpudata->AOVdiffusecount[pixel_index] += 1;
-						directillumination = mask;
-						GetRidofZero(directillumination);
-					}
+				// multiply mask with colour of object
+				mask *= material.m_SpecColorReflect;
+				// offset origin next path segment to prevent self intersection
+				hitpoint += nl * 0.001f; // scene size dependent
+
+				lastmaterialisdiffuse = false;
+
+				if (bounces == 0)
+				{
+					gpudata->AOVspecular[pixel_index] += mask;
+					firstbouncespecularcolor = true;
+					directillumination = mask;
+					GetRidofZero(directillumination);
 				}
 			}
 			else
 			{
+				// diffuse path
 				float r1 = 2 * M_PI * curand_uniform(randstate);
 				float r2 = curand_uniform(randstate);
 				float r2s = sqrtf(r2);
@@ -961,7 +921,7 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 					Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
 					mask *= material.m_ColorReflect * t;
 				}
-				
+					
 				lastmaterialisdiffuse = true;
 				if (bounces == 0)
 				{
