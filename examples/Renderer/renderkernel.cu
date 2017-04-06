@@ -20,8 +20,6 @@
 #define F32_MIN          (1.175494351e-38f)
 #define F32_MAX          (3.402823466e+38f)
 
-#define HDRwidth 3200
-#define HDRheight 1600
 #define HDR
 #define EntrypointSentinel 0x76543210
 #define MaxBlockHeight 6
@@ -784,20 +782,20 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 			//float v = longlatY / M_PI ; 
 
 			//// map u, v to integer coordinates
-			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			//int v2 = (int)(v * HDRheight); // % HDRheight;
+			//int u2 = (int)((1 - u) * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
 
 			//// compute the texel index in the HDR map 
-			//int HDRtexelidx = u2 + v2 * HDRwidth;
+			//int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
 			////int index = u2 + v2 * g_texCuda.width;
 
 			////float4 HDRcol = HDRmap[HDRtexelidx];
 			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
 			////float4 HDRcol = g_texCuda.Fetch(index);
 			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			Vec3f HDRcol2 = Vec3f(0.2f, 0.2f, 0.2f);
+			Vec3f HDRcol2 = Vec3f(0.6f, 0.6f, 0.6f);
 
-			emit = HDRcol2 * 1.0f;
+			emit = HDRcol2 * 2.0f;
 			accucolor += (mask * emit); 
 			if (bounces == 0)
 			{
@@ -922,7 +920,7 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 					else
 					{
 						Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
-						mask *= t;
+						mask *= material.m_ColorReflect * t;
 					}
 					
 					lastmaterialisdiffuse = true;
@@ -961,7 +959,7 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 				else
 				{
 					Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
-					mask *= t;
+					mask *= material.m_ColorReflect * t;
 				}
 				
 				lastmaterialisdiffuse = true;
@@ -1261,7 +1259,8 @@ __global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int fr
 		indirectdiffuse /= weight_total_diffuse;
 		
 		// specular filter
-		filter_window /= 5;
+		filter_window = int(filter_window * 0.7);
+		//float sq_glossiness = gpudata->cudaMaterialsPtr[int(gpudata->materialbuffer[i])].m_glossiness;
 		if (filter_window == 0) filter_window = 1;
 		for (int m = -filter_window; m <= filter_window; m++)
 		{
@@ -1276,7 +1275,7 @@ __global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int fr
 				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
 					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
 					exp(-(m*m + n*n) / (2.0f * pos_var)) *								
-					exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / col_var);												
+					exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / (col_var));												
 
 				weight_total_specular += weight;
 				indirectspecular += gpudata->AOVindirectspecular[index] * weight;
@@ -1317,7 +1316,7 @@ bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
 void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp){
+	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp, enviParam *en){
 
 	if (firstTime) {
 		// if this is the first time cudarender() is called,
@@ -1327,7 +1326,7 @@ void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const flo
 		HDRtexture.filterMode = cudaFilterModeLinear;
 
 		cudaChannelFormatDesc channel4desc = cudaCreateChannelDesc<float4>(); 
-		cudaBindTexture(NULL, &HDRtexture, HDRmap, &channel4desc, HDRwidth * HDRheight * sizeof(float4));  // 2k map:
+		cudaBindTexture(NULL, &HDRtexture, HDRmap, &channel4desc, en->HDRwidth * en->HDRheight * sizeof(float4));  // 2k map:
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors

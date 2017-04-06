@@ -16,6 +16,12 @@ struct controlParam
 	float m_variance_dep;
 };
 
+struct enviParam
+{
+	int HDRwidth;
+	int HDRheight;
+};
+
 // this structure need to be copied into GPU memory 
 struct gpuData
 {
@@ -27,6 +33,7 @@ struct gpuData
 	MaterialCUDA* cudaMaterialsPtr;
 	TextureCUDA* cudaTexturePtr;
 	float4* cudaTextureData;
+	enviParam* cudaEnvi;
 	Camera* cudaRendercam;
 	Vec3f* accumulatebuffer; // image buffer storing accumulated pixel samples
 	Vec3f* AOVdirectdiffuse; 
@@ -46,6 +53,7 @@ struct gpuData
 		cudaMaterialsPtr = NULL;
 		cudaTexturePtr = NULL;
 		cudaTextureData = NULL;
+		cudaEnvi = NULL;
 		cudaRendercam = NULL;
 		accumulatebuffer = NULL; // image buffer storing accumulated pixel samples
 		AOVdirectdiffuse = NULL;
@@ -66,6 +74,7 @@ struct gpuData
 		cudaFree(cudaMaterialsPtr);
 		cudaFree(cudaTexturePtr);
 		cudaFree(cudaTextureData);
+		cudaFree(cudaEnvi);
 		cudaFree(cudaRendercam);
 		cudaFree(accumulatebuffer);
 		cudaFree(AOVdirectdiffuse);

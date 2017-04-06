@@ -24,6 +24,7 @@ TriangleWindow::TriangleWindow(QWidget *parent)
     : QOpenGLWidget(parent)
 {
     hostRendercam = NULL;
+	hostEnvi = NULL;
     
     finaloutputbuffer = NULL; // stores averaged pixel samples
     gpuHDRenv = NULL;
@@ -35,13 +36,14 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	m_interval = 50;
 	m_firsttime = true;
 
-	cp.m_windowSize = 10;
+	cp.m_windowSize = 15;
 	cp.m_variance_pos = 100;
-	cp.m_variance_col = 40;
+	cp.m_variance_col = 200;
 	cp.m_variance_dep = 100;
 
-	mtlfile = "data/class2.mtl";
-    scenefile = "data/class2.obj"; 
+	mtlfile = "data/class3.mtl";
+    scenefile = "data/class3.obj"; 
+    //HDRmapname = "data/big.hdr";
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
 //! [1]
@@ -170,6 +172,12 @@ void TriangleWindow::initHDR(){
     // copy HDR map to CUDA
     cudaMalloc(&gpuHDRenv, HDRwidth * HDRheight * sizeof(float4));
     cudaMemcpy(gpuHDRenv, cpuHDRenv, HDRwidth * HDRheight * sizeof(float4), cudaMemcpyHostToDevice);
+
+	hostEnvi = new enviParam();
+	hostEnvi->HDRheight = HDRheight;
+	hostEnvi->HDRwidth = HDRwidth;
+
+	cudaMemcpy(m_host_gpu_data->cudaEnvi, hostEnvi, sizeof(enviParam), cudaMemcpyHostToDevice);
 }
 
 void TriangleWindow::initCUDAscenedata()
@@ -188,8 +196,8 @@ void TriangleWindow::initCUDAscenedata()
 
     // allocate GPU memory for interactive camera
     cudaMalloc((void**)&m_host_gpu_data->cudaRendercam, sizeof(Camera));
+	cudaMalloc((void**)&m_host_gpu_data->cudaEnvi, sizeof(enviParam));
 
-    // allocate and copy scene databuffers to the GPU (BVH nodes, triangle vertices, triangle indices)
     cudaMalloc((void**)&m_host_gpu_data->cudaNodePtr, gpuBVH->getGpuNodesSize() * sizeof(float4));
     cudaMemcpy(m_host_gpu_data->cudaNodePtr, gpuBVH->getGpuNodes(), gpuBVH->getGpuNodesSize() * sizeof(float4), cudaMemcpyHostToDevice);
 
@@ -277,6 +285,7 @@ void TriangleWindow::deleteCudaAndCpuMemory()
     cudaFree(m_gpu_data);
 
     delete hostRendercam;
+    delete hostEnvi;
     delete interactiveCamera;
     delete cpuHDRenv;
     delete gpuBVH;
@@ -328,7 +337,7 @@ void TriangleWindow::paintGL()
 
     // gateway from host to CUDA, passes all data needed to render frame (triangles, BVH tree, camera) to CUDA for execution
     cudaRender(m_host_gpu_data, m_gpu_data, finaloutputbuffer, gpuHDRenv,
-		framenumber, hashedframes, gpuBVH->getGpuNodesSize(), gpuBVH->getLeafnodeCount(), gpuBVH->getTriCount(), width(), height(), &cp );
+		framenumber, hashedframes, gpuBVH->getGpuNodesSize(), gpuBVH->getLeafnodeCount(), gpuBVH->getTriCount(), width(), height(), &cp, hostEnvi );
 	
     cudaThreadSynchronize();
     cudaGLUnmapBufferObject(m_vbo);

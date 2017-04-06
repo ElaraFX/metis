@@ -9,7 +9,7 @@
 
 
 void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int totalnodecnt, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp);
+	const unsigned int totalnodecnt, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp, enviParam *en);
 
 //------------------------------------------------------------------------
 // Constants.

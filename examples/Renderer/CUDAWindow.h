@@ -56,6 +56,7 @@ private:
 
 	gpuData* m_gpu_data;
 	gpuData* m_host_gpu_data;
+	enviParam* hostEnvi;
     Camera* hostRendercam;
 	Vec3f* finaloutputbuffer; // stores averaged pixel samples
     float4* gpuHDRenv;
