@@ -26,7 +26,9 @@
 
 
 // CUDA textures containing scene data
-texture<float4, 1, cudaReadModeElementType> HDRtexture;
+texture<float4, cudaTextureType2D, cudaReadModeElementType> HDRtexture;
+//texture<float4, 1, cudaReadModeElementType> HDRtexture;
+//texture<float4, cudaTextureType2D, cudaReadModeElementType> Alltexture[30];
 
 __device__ inline Vec3f absmax3f(const Vec3f& v1, const Vec3f& v2){
 	return Vec3f(v1.x*v1.x > v2.x*v2.x ? v1.x : v2.x, v1.y*v1.y > v2.y*v2.y ? v1.y : v2.y, v1.z*v1.z > v2.z*v2.z ? v1.z : v2.z);
@@ -772,28 +774,29 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
 			// Convert (normalized) dir to spherical coordinates.
-			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			//
-			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			//float offsetY = 0.5f;
-			//float u = longlatX / TWO_PI; // +offsetY;
-			//float v = longlatY / M_PI ; 
+			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			
+			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			float offsetY = 0.5f;
+			float u = longlatX / TWO_PI; // +offsetY;
+			float v = longlatY / M_PI ; 
 
-			//// map u, v to integer coordinates
-			//int u2 = (int)((1 - u) * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
-			//int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
+			// map u, v to integer coordinates
+			int u2 = (int)(u * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
+			int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
 
-			//// compute the texel index in the HDR map 
-			//int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
-			////int index = u2 + v2 * g_texCuda.width;
+			// compute the texel index in the HDR map 
+			int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
+			//int index = u2 + v2 * g_texCuda.width;
 
-			////float4 HDRcol = HDRmap[HDRtexelidx];
+			//float4 HDRcol = HDRmap[HDRtexelidx];
 			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			////float4 HDRcol = g_texCuda.Fetch(index);
-			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			Vec3f HDRcol2 = Vec3f(0.6f, 0.6f, 0.6f);
+			float4 HDRcol = tex2D(HDRtexture, u, v);
+			//float4 HDRcol = g_texCuda.Fetch(index);
+			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			//Vec3f HDRcol2 = Vec3f(0.6f, 0.6f, 0.6f);
 
 			emit = HDRcol2 * 2.0f;
 			accucolor += (mask * emit); 
@@ -1282,11 +1285,21 @@ void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const flo
 		// if this is the first time cudarender() is called,
 		// bind the scene data to CUDA textures!
 		firstTime = false;
-		
-		HDRtexture.filterMode = cudaFilterModeLinear;
+
+		// Set HDR texture reference parameters    
+		HDRtexture.addressMode[0] = cudaAddressModeWrap;    
+		HDRtexture.addressMode[1] = cudaAddressModeWrap;    
+		HDRtexture.filterMode     = cudaFilterModeLinear;    
+		HDRtexture.normalized     = true;
 
 		cudaChannelFormatDesc channel4desc = cudaCreateChannelDesc<float4>(); 
-		cudaBindTexture(NULL, &HDRtexture, HDRmap, &channel4desc, en->HDRwidth * en->HDRheight * sizeof(float4));  // 2k map:
+
+		cudaArray* cuArray;    
+		cudaMallocArray(&cuArray, &channel4desc, en->HDRwidth, en->HDRheight);
+
+		cudaMemcpyToArray(cuArray, 0, 0, HDRmap, en->HDRwidth * en->HDRheight * sizeof(float4), cudaMemcpyHostToDevice);
+		
+		cudaBindTextureToArray(&HDRtexture, cuArray, &channel4desc);
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors
