@@ -1091,6 +1091,8 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+	if(x >= cudaRendercam->resolution.x)return;
+	if(y >= cudaRendercam->resolution.y)return;
 	float depth;
 	Vec3f normal = Vec3f(0, 0, 0);
 	float materialID;
@@ -1199,7 +1201,8 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	
+	if(x >= cudaRenderCam->resolution.x)return;
+	if(y >= cudaRenderCam->resolution.y)return;
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
@@ -1296,7 +1299,7 @@ void cudaRender(const float4* nodes, const float4* triWoops, const float4* debug
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors
-	dim3 grid(w / block.x, h / block.y, 1);
+	dim3 grid((w + 15) / block.x, (h + 15) / block.y, 1);
 
 	// Configure grid and block sizes:
 	int threadsPerBlock = 256;
