@@ -39,10 +39,15 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	cp.m_windowSize = 15;
 	cp.m_variance_pos = 100;
 	cp.m_variance_col = 200;
-	cp.m_variance_dep = 100;
+	cp.m_color_saturation = 1;
+	cp.m_exposure_value = 0;
+	cp.m_whitepoint = 6500;
+	cp.m_shadows = 0.2;
+	cp.m_midtones = 1;
+	cp.m_highlights = 0.2;
 
-	mtlfile = "data/teapot1.mtl";
-    scenefile = "data/teapot1.obj"; 
+	mtlfile = "data/class3.mtl";
+    scenefile = "data/class3.obj"; 
     //HDRmapname = "data/big.hdr";
     HDRmapname = "data/Topanga_Forest_B_3k.hdr";
 }
@@ -119,9 +124,28 @@ void TriangleWindow::slotVariancColChanged(double val){
 	buffer_reset = true;
 }
 
-void TriangleWindow::slotVariancDepChanged(double val){
-	cp.m_variance_dep = val;
-	buffer_reset = true;
+void TriangleWindow::slotColorsatChanged(double val){
+	cp.m_color_saturation = val;
+}
+
+void TriangleWindow::slotExposureValChanged(double val){
+	cp.m_exposure_value = val;
+}
+
+void TriangleWindow::slotWhitepointChanged(double val){
+	cp.m_whitepoint = val;
+}
+
+void TriangleWindow::slotShadowsChanged(double val){
+	cp.m_shadows = val;
+}
+
+void TriangleWindow::slotMidtonesChanged(double val){
+	cp.m_midtones = val;
+}
+
+void TriangleWindow::slotHighlightsChanged(double val){
+	cp.m_highlights = val;
 }
 
 void TriangleWindow::createVBO(GLuint* vbo)

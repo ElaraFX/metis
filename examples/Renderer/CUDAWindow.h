@@ -45,7 +45,12 @@ public slots:
 	void slotWindowSizeChanged(int size);
 	void slotVariancPosChanged(double val);
 	void slotVariancColChanged(double val);
-	void slotVariancDepChanged(double val);
+	void slotColorsatChanged(double val);
+	void slotExposureValChanged(double val);
+	void slotWhitepointChanged(double val);
+	void slotShadowsChanged(double val);
+	void slotMidtonesChanged(double val);
+	void slotHighlightsChanged(double val);
 
 private:
     GLuint m_posAttr;

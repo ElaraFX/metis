@@ -84,7 +84,12 @@ private:
 	QSpinBox* m_filterSizeSpin;
 	QDoubleSpinBox* m_variancePosSpin;
 	QDoubleSpinBox* m_varianceColSpin;
-	QDoubleSpinBox* m_varianceDepSpin;
+	QDoubleSpinBox* m_colorsatSpin;
+	QDoubleSpinBox* m_exposureValSpin;
+	QDoubleSpinBox* m_whitePointSpin;
+	QDoubleSpinBox* m_shadowsSpin;
+	QDoubleSpinBox* m_midtonesSpin;
+	QDoubleSpinBox* m_highlightsSpin;
 
     QMap<QtProperty *, QString> propertyToId;
     QMap<QString, QtProperty *> idToProperty;

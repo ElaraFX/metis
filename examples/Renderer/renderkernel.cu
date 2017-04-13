@@ -1,5 +1,4 @@
-// BVH traversal kernels based on "Understanding the 
-
+#pragma once
 #include <cuda.h>
 #include <math_functions.h>
 #include <vector_types.h>
@@ -774,31 +773,31 @@ __device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const flo
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
 			// Convert (normalized) dir to spherical coordinates.
-			float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
-			longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
-			float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
-			
-			// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
-			float offsetY = 0.5f;
-			float u = longlatX / TWO_PI; // +offsetY;
-			float v = longlatY / M_PI ; 
+			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
+			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
+			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
+			//
+			//// map theta and phi to u and v texturecoordinates in [0,1] x [0,1] range
+			//float offsetY = 0.5f;
+			//float u = longlatX / TWO_PI; // +offsetY;
+			//float v = longlatY / M_PI ; 
 
-			// map u, v to integer coordinates
-			int u2 = (int)(u * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
-			int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
+			//// map u, v to integer coordinates
+			//int u2 = (int)(u * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
 
-			// compute the texel index in the HDR map 
-			int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
-			//int index = u2 + v2 * g_texCuda.width;
+			//// compute the texel index in the HDR map 
+			//int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
+			////int index = u2 + v2 * g_texCuda.width;
 
-			//float4 HDRcol = HDRmap[HDRtexelidx];
-			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
-			float4 HDRcol = tex2D(HDRtexture, u, v);
-			//float4 HDRcol = g_texCuda.Fetch(index);
-			Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			//Vec3f HDRcol2 = Vec3f(0.6f, 0.6f, 0.6f);
+			////float4 HDRcol = HDRmap[HDRtexelidx];
+			////float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			//float4 HDRcol = tex2D(HDRtexture, u, v);
+			////float4 HDRcol = g_texCuda.Fetch(index);
+			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
+			Vec3f HDRcol2 = Vec3f(2.0f, 2.0f, 2.0f);
 
-			emit = HDRcol2 * 2.0f;
+			emit = HDRcol2 * 0.6f;
 			accucolor += (mask * emit); 
 			if (bounces == 0)
 			{
@@ -1013,6 +1012,10 @@ __global__ void PathTracingKernel(Vec3f* output, gpuData *gpudata, const float4*
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
 	Vec3f normal = Vec3f(0, 0, 0);
 	float materialID;
 
@@ -1111,165 +1114,198 @@ __global__ void PathTracingKernel(Vec3f* output, gpuData *gpudata, const float4*
 	gpudata->materialbuffer[i] = gpudata->materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
 }
 
-__global__ void FilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+__global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
-	if (framenumber < 200)
+	Vec3f indirectdiffuse(0, 0, 0);
+	Vec3f indirectspecular(0, 0, 0);
+	float weight_total_diffuse = 0, weight_total_specular = 0;
+	int index;
+	float weight;
+	int filter_window = winSize;
+	// diffuse filter
+	for (int m = -filter_window; m <= filter_window; m++)
 	{
-		ret_colour = gpudata->accumulatebuffer[i];
-	}
-	else
-	{
-		float weight_total = 0;
-		int index;
-		float weight;
-		int filter_window = winSize;
-		for (int m = -filter_window; m <= filter_window; m++)
+		for (int n = -filter_window; n <= filter_window; n++)
 		{
-			for (int n = -filter_window; n <= filter_window; n++)
-			{
-				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
-				int index_x = m + x;
-				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
-					continue;
-				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
-				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
-					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
-					exp(-(m*m + n*n) / (2.0f * pos_var)) *								
-					exp(-(gpudata->accumulatebuffer[i] - gpudata->accumulatebuffer[index]).lengthsq() / (2.0f * col_var));												
+			int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+			int index_x = m + x;
+			if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+				continue;
+			index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
 
-				weight_total += weight;
-				ret_colour += gpudata->accumulatebuffer[index] * weight;
-			}
+			weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+				(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+				exp(-(m*m + n*n) / (2.0f * pos_var)) *							
+				exp(-(gpudata->AOVindirectdiffuse[i] - gpudata->AOVindirectdiffuse[index]).lengthsq() / (2.0f * col_var));												
+
+			weight_total_diffuse += weight;
+			indirectdiffuse += gpudata->AOVindirectdiffuse[index] * weight;
 		}
-		ret_colour /= weight_total;
-		//ret_colour = Vec3f(float(materialbuffer[i] % 10) / 10.0f, 0, 0) * framenumber;
 	}
-	// averaged colour: divide colour by the number of calculated frames so far
-	//accumbuffer[i] = ret_colour;
-	Vec3f tempcol = ret_colour / framenumber;
+	indirectdiffuse /= weight_total_diffuse;
+		
+	// specular filter
+	filter_window = int(filter_window * 0.7);
+	//float sq_glossiness = gpudata->cudaMaterialsPtr[int(gpudata->materialbuffer[i])].m_glossiness;
+	if (filter_window == 0) filter_window = 1;
+	for (int m = -filter_window; m <= filter_window; m++)
+	{
+		for (int n = -filter_window; n <= filter_window; n++)
+		{
+			int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+			int index_x = m + x;
+			if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+				continue;
+			index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
 
-	tempcol *= 8.0f;
+			weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+				(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+				exp(-(m*m + n*n) / (2.0f * pos_var)) *								
+				exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / (col_var));												
 
-	tempcol.x = tempcol.x / (tempcol.x + 1.0f); 
-	tempcol.y = tempcol.y / (tempcol.y + 1.0f); 
-	tempcol.z = tempcol.z / (tempcol.z + 1.0f); 
+			weight_total_specular += weight;
+			indirectspecular += gpudata->AOVindirectspecular[index] * weight;
+		}
+	}
+	indirectspecular /= weight_total_specular;
 
-	Colour fcolour;
-	Vec3f colour = tempcol;
-	
-	// convert from 96-bit to 24-bit colour + perform gamma correction
-	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
+	float diffseweight = (gpudata->AOVdiffusecount[i] == 0) ? 0 : 1.0f / gpudata->AOVdiffusecount[i];
+	float specularweight = ((framenumber - gpudata->AOVdiffusecount[i]) == 0) ? 0 : 1.0f / (framenumber - gpudata->AOVdiffusecount[i]);
+	ret_colour = gpudata->AOVdirectdiffuse[i] * indirectdiffuse * diffseweight + gpudata->AOVspecular[i] * indirectspecular * specularweight;
 
-		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-		//								(unsigned char)(colour.y* 255), 
-		//								(unsigned char)(colour.z* 255), 1);
-	
-	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
-	output[i] = Vec3f(x, y, fcolour.c);
+	// pro process
+	gpudata->accumulatebuffer[i] = ret_colour;
 }
 
-__global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+__device__ void temperature_to_color(float color_temperature, Vec3f& result)
+{
+	const float epsilon = 0.0001f;
+	float r, g, b;
+    float temperature = color_temperature / 100.0f;
+    if (temperature <= 65.0f)
+	{
+        r = 1.0f;
+        g = temperature;
+        g = 99.4708025861f * logf(g) - 161.1195681661f;
+        g = g / 255.0f;
+        if (g < 0.0f)
+            g = 0.0f;
+		else if (g > 1.0f)
+            g = 1.0f;
+        if (temperature <= 19.0f)
+            b = 0.0f;
+        else
+		{
+            b = temperature - 10.0f;
+            b = 138.5177312231f * logf(b) - 305.0447927307f;
+            b = b / 255.0f;
+            if (b < 0.0f)
+                b = 0.0f;
+            else if (b > 1.0f)
+                b = 1.0f;
+		}
+	}
+    else
+	{
+        r = temperature - 60.0f;
+        r = 329.698727446f * powf(r, -0.1332047592f) / 255.0f;
+        if (r < 0.0f)
+            r = 0.0f;
+		else if (r > 1.0f)
+            r = 1.0f;
+        g = temperature - 60.0f;
+        g = 288.1221695283f * powf(g, -0.0755148492f) / 255.0f;
+        if (g < 0.0f)
+            g = 0.0f;
+		else if (g > 1.0f)
+            g = 1.0f;
+        b = 1.0f;
+	}
+	result.x = r, result.y = g, result.z = b;
+	if (result.x <= 0.0f) result.x = epsilon;
+	if (result.y <= 0.0f) result.y = epsilon;
+	if (result.z <= 0.0f) result.z = epsilon;
+}
+
+__device__ void exposure(Vec3f& colorResult, float col_sat, float exp_val, float whitepoint, float shadows, float midtones, float highlights)
+{
+	const Vec3f luminance_weight(0.212671f, 0.715160f, 0.072169f);
+
+	// whitepoint
+	Vec3f nwp(1.0f, 1.0f, 1.0f);
+	temperature_to_color(whitepoint, nwp);
+	if (nwp.x > 0.0f) { nwp.x = 1.0f / nwp.x; } else { nwp.x = 1.0f; }
+    if (nwp.y > 0.0f) { nwp.y = 1.0f / nwp.y; } else { nwp.y = 1.0f; }
+	if (nwp.z > 0.0f) { nwp.z = 1.0f / nwp.z; } else { nwp.z = 1.0f; }
+    const float temp2 = luminance_weight.x * nwp.x + luminance_weight.y * nwp.y + luminance_weight.z * nwp.z;
+    nwp /= temp2;
+
+	/* precompute data_m */
+	const float f_number = 8.0f;
+	const float film_iso = 100.0f;
+	const float t = (f_number * f_number) / powf(2.0f, exp_val);
+    const float data_m = ((18.0f / 106.0f) * (film_iso * t) / (15.4f * f_number * f_number));
+	colorResult *= (nwp * data_m);
+
+	/* precompute data_crunch */
+	const float data_crunch = shadows * 2.0f + 1.0f;
+
+	/* precompute data_g */
+	const float data_g = 1.0f / midtones;
+
+	colorResult = colorResult * (Vec3f(1.0f, 1.0f, 1.0f) + (colorResult * highlights)) / (Vec3f(1.0f, 1.0f, 1.0f) + colorResult);
+
+	// color saturation
+	float oms = 1.0f - col_sat;
+    colorResult = colorResult * col_sat + luminance_weight * colorResult * oms;
+	if (colorResult.x < 0) colorResult.x = 0;
+	if (colorResult.y < 0) colorResult.y = 0;
+	if (colorResult.z < 0) colorResult.z = 0;
+	if (colorResult.x > 1) colorResult.x = 1;
+	if (colorResult.y > 1) colorResult.y = 1;
+	if (colorResult.z > 1) colorResult.z = 1;
+
+	const float intens = powf((luminance_weight.x * colorResult.x + luminance_weight.y * colorResult.y + luminance_weight.z * colorResult.z), 0.5f);
+    oms = 1.0f - intens;
+    if (intens < 1.0f) 
+	{
+		colorResult = colorResult * intens + powf(colorResult, Vec3f(data_crunch, data_crunch, data_crunch)) * oms;
+    }
+
+	colorResult = powf(colorResult, Vec3f(data_g, data_g, data_g));
+}
+
+__global__ void proProcessing(Vec3f* output, gpuData *gpudata, int effectiveFrame, float col_sat, float exp_val, float whitepoint, float shadows, float midtones, float highlights)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
-	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
-	//if (x > gpudata->cudaRendercam->resolution.x / 2)
-	if (framenumber < 200)
-	{
-		ret_colour = gpudata->accumulatebuffer[i];
-	}
-	else
-	{
-		Vec3f indirectdiffuse(0, 0, 0);
-		Vec3f indirectspecular(0, 0, 0);
-		float weight_total_diffuse = 0, weight_total_specular = 0;
-		int index;
-		float weight;
-		int filter_window = winSize;
-		// diffuse filter
-		for (int m = -filter_window; m <= filter_window; m++)
-		{
-			for (int n = -filter_window; n <= filter_window; n++)
-			{
-				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
-				int index_x = m + x;
-				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
-					continue;
-				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
 
-				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
-					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
-					exp(-(m*m + n*n) / (2.0f * pos_var)) *							
-					exp(-(gpudata->AOVindirectdiffuse[i] - gpudata->AOVindirectdiffuse[index]).lengthsq() / (2.0f * col_var));												
+	Vec3f originResult = gpudata->accumulatebuffer[i] / effectiveFrame;
 
-				weight_total_diffuse += weight;
-				indirectdiffuse += gpudata->AOVindirectdiffuse[index] * weight;
-			}
-		}
-		indirectdiffuse /= weight_total_diffuse;
-		
-		// specular filter
-		filter_window = int(filter_window * 0.7);
-		//float sq_glossiness = gpudata->cudaMaterialsPtr[int(gpudata->materialbuffer[i])].m_glossiness;
-		if (filter_window == 0) filter_window = 1;
-		for (int m = -filter_window; m <= filter_window; m++)
-		{
-			for (int n = -filter_window; n <= filter_window; n++)
-			{
-				int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
-				int index_x = m + x;
-				if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
-					continue;
-				index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
+	exposure(originResult, col_sat, exp_val, whitepoint, shadows, midtones, highlights);
 
-				weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
-					(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
-					exp(-(m*m + n*n) / (2.0f * pos_var)) *								
-					exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / (col_var));												
-
-				weight_total_specular += weight;
-				indirectspecular += gpudata->AOVindirectspecular[index] * weight;
-			}
-		}
-		indirectspecular /= weight_total_specular;
-
-		float diffseweight = (gpudata->AOVdiffusecount[i] == 0) ? 0 : 1.0f / gpudata->AOVdiffusecount[i];
-		float specularweight = ((framenumber - gpudata->AOVdiffusecount[i]) == 0) ? 0 : 1.0f / (framenumber - gpudata->AOVdiffusecount[i]);
-		ret_colour = gpudata->AOVdirectdiffuse[i] * indirectdiffuse * diffseweight + gpudata->AOVspecular[i] * indirectspecular * specularweight;
-	}
-
-	Vec3f tempcol = ret_colour / framenumber;
-
-	tempcol *= 8.0f;
-
-	tempcol.x = tempcol.x / (tempcol.x + 1.0f); 
-	tempcol.y = tempcol.y / (tempcol.y + 1.0f); 
-	tempcol.z = tempcol.z / (tempcol.z + 1.0f); 
-
-	Colour fcolour;
-	Vec3f colour = tempcol;
-	
+	Colour fcolour;	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
-
-		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-		//								(unsigned char)(colour.y* 255), 
-		//								(unsigned char)(colour.z* 255), 1);
+	fcolour.components = make_uchar4((unsigned char)(powf(originResult.x, 1 / 2.2f) * 255), 
+									 (unsigned char)(powf(originResult.y, 1 / 2.2f) * 255), 
+									 (unsigned char)(powf(originResult.z, 1 / 2.2f) * 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);
@@ -1303,17 +1339,23 @@ void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const flo
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors
-	dim3 grid(w / block.x, h / block.y, 1);
+	dim3 grid((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
 
 	// Configure grid and block sizes:
 	int threadsPerBlock = 256;
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
 	//int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
 	
-	// <<<fullBlocksPerGrid, threadsPerBlock>>>
-	
-	PathTracingKernel <<<grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
+	if (framenumber <= 200)
+	{
+		PathTracingKernel <<< grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
+	}
+	else if (framenumber == 201)
+	{
+		newFilterKernel <<< grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col);
+	}
 
 	cudaThreadSynchronize();
-	newFilterKernel <<<grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col, cp->m_variance_dep);
+	proProcessing <<< grid, block >>> (outputbuf, gpudata, min(framenumber, 200), cp->m_color_saturation, cp->m_exposure_value, cp->m_whitepoint, 
+		cp->m_shadows, cp->m_midtones, cp->m_highlights);
 }

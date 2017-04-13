@@ -13,7 +13,12 @@ struct controlParam
 	int	m_windowSize;
 	float m_variance_pos;
 	float m_variance_col;
-	float m_variance_dep;
+	float m_color_saturation;
+	float m_exposure_value;
+	float m_whitepoint;
+	float m_shadows;
+	float m_midtones;
+	float m_highlights;
 };
 
 struct enviParam
