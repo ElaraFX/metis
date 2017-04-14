@@ -10,6 +10,7 @@
 #include <QDockWidget>
 #include <QToolBar>
 #include <qspinbox.h>
+#include <qlabel.h>
 
 #include "CUDAWindow.h"
 
@@ -49,6 +50,7 @@ void CanvasView::contentsMouseMoveEvent(QMouseEvent* event)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+	this->setWindowTitle(QString::fromLocal8Bit("闪渲科技 - Metis渲染器 V0.1"));
     fileToolBar = addToolBar(tr("File"));
     statusBar();
     QMenu *editMenu = menuBar()->addMenu(tr("File"));
@@ -63,37 +65,37 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *newRectangleAction = new QAction(tr("Rectangle"), this);
     connect(newRectangleAction, SIGNAL(triggered(bool)), this, SLOT(newRectangle()));
     newObjectMenu->addAction(newRectangleAction);
-    fileToolBar->addAction(newRectangleAction);
+    //fileToolBar->addAction(newRectangleAction);
 
     QAction *newLineAction = new QAction(tr("Line"), this);
     connect(newLineAction, SIGNAL(triggered(bool)), this, SLOT(newLine()));
     newObjectMenu->addAction(newLineAction);
-    fileToolBar->addAction(newLineAction);
+    //fileToolBar->addAction(newLineAction);
 
     QAction *newEllipseAction = new QAction(tr("Ellipse"), this);
     connect(newEllipseAction, SIGNAL(triggered(bool)), this, SLOT(newEllipse()));
     newObjectMenu->addAction(newEllipseAction);
-    fileToolBar->addAction(newEllipseAction);
+    //fileToolBar->addAction(newEllipseAction);
 
     QAction *newTextAction = new QAction(tr("Text"), this);
     connect(newTextAction, SIGNAL(triggered(bool)), this, SLOT(newText()));
     newObjectMenu->addAction(newTextAction);
-    fileToolBar->addAction(newTextAction);
+    //fileToolBar->addAction(newTextAction);
 
     deleteAction = new QAction(tr("Delete Object"), this);
     connect(deleteAction, SIGNAL(triggered(bool)), this, SLOT(deleteObject()));
     editMenu->addAction(deleteAction);
-    fileToolBar->addAction(deleteAction);
+    //fileToolBar->addAction(deleteAction);
 
     QAction *clearAction = new QAction(tr("Clear All"), this);
     connect(clearAction, SIGNAL(triggered(bool)), this, SLOT(clearAll()));
     editMenu->addAction(clearAction);
-    fileToolBar->addAction(clearAction);
+    //fileToolBar->addAction(clearAction);
 
     QAction *fillAction = new QAction(tr("Fill View"), this);
     connect(fillAction, SIGNAL(triggered(bool)), this, SLOT(fillView()));
     editMenu->addAction(fillAction);
-    fileToolBar->addAction(fillAction);
+    //fileToolBar->addAction(fillAction);
 
     doubleManager = new QtDoublePropertyManager(this);
     stringManager = new QtStringPropertyManager(this);
@@ -138,14 +140,23 @@ MainWindow::MainWindow(QWidget *parent)
 	m_shadowsSpin = new QDoubleSpinBox();
 	m_midtonesSpin = new QDoubleSpinBox();
 	m_highlightsSpin = new QDoubleSpinBox();
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("去噪窗口")));
 	fileToolBar->addWidget(m_filterSizeSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("位置影响因子")));
 	fileToolBar->addWidget(m_variancePosSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("颜色影响因子")));
 	fileToolBar->addWidget(m_varianceColSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("颜色饱和度")));
 	fileToolBar->addWidget(m_colorsatSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("曝光指数")));
 	fileToolBar->addWidget(m_exposureValSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("白平衡")));
 	fileToolBar->addWidget(m_whitePointSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("暗区亮度")));
 	fileToolBar->addWidget(m_shadowsSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("普通亮度")));
 	fileToolBar->addWidget(m_midtonesSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("高光区亮度")));
 	fileToolBar->addWidget(m_highlightsSpin);
 
 	m_filterSizeSpin->setValue(15);

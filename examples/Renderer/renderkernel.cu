@@ -1183,8 +1183,11 @@ __global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int fr
 	float specularweight = ((framenumber - gpudata->AOVdiffusecount[i]) == 0) ? 0 : 1.0f / (framenumber - gpudata->AOVdiffusecount[i]);
 	ret_colour = gpudata->AOVdirectdiffuse[i] * indirectdiffuse * diffseweight + gpudata->AOVspecular[i] * indirectspecular * specularweight;
 
-	// pro process
-	gpudata->accumulatebuffer[i] = ret_colour;
+	// simple linear interpolation
+	if (framenumber < 210)
+		gpudata->accumulatebuffer[i] += (ret_colour - gpudata->accumulatebuffer[i]) / (210 - framenumber);
+	else
+		gpudata->accumulatebuffer[i] = ret_colour;
 }
 
 __device__ void temperature_to_color(float color_temperature, Vec3f& result)
@@ -1350,7 +1353,7 @@ void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const flo
 	{
 		PathTracingKernel <<< grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
 	}
-	else if (framenumber == 201)
+	else if (framenumber > 200 && framenumber <= 210)
 	{
 		newFilterKernel <<< grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col);
 	}
