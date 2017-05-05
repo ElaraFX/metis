@@ -1270,7 +1270,8 @@ __device__ void exposure(Vec3f& colorResult, float col_sat, float exp_val, float
 
 	// color saturation
 	float oms = 1.0f - col_sat;
-    colorResult = colorResult * col_sat + luminance_weight * colorResult * oms;
+	float lum = luminance_weight.x * colorResult.x + luminance_weight.y * colorResult.y + luminance_weight.z * colorResult.z;
+    colorResult = colorResult * col_sat + lum * oms;
 	if (colorResult.x < 0) colorResult.x = 0;
 	if (colorResult.y < 0) colorResult.y = 0;
 	if (colorResult.z < 0) colorResult.z = 0;
