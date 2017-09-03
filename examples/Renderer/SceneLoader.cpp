@@ -17,16 +17,11 @@
 #include "Geometry.h"
 #include "SceneLoader.h"
 
+
 using std::string;
 
-unsigned verticesNo = 0;
-unsigned normalsNo = 0;
-unsigned trianglesNo = 0;
-unsigned materialNo = 0;
-Vertex* vertices = NULL;   // vertex list
-Vec3f* normals = NULL;
-Triangle* triangles = NULL;  // triangle list
-MaterialCUDA* materials = NULL;
+SceneInfo scene_info;
+
 
 struct face {                  
 	std::vector<int> vertex;
@@ -67,11 +62,15 @@ struct TriangleMesh
 {
 	std::vector<Vec3f> verts;
     std::vector<Vec3f> nors;
+	std::vector<Vec3f> uvs;
+    std::vector<Vec3i> faceUvIndexs;
 	std::vector<Vec3i> faceVertIndexs;
     std::vector<Vec3i> faceNorIndexs;
 	std::vector<int> materialIndexs;
 	Vec3f bounding_box[2];   // mesh bounding box
 };
+
+TriangleMesh mesh;
 
 void load_object(const char *filename)
 {
@@ -103,169 +102,180 @@ void load_object(const char *filename)
 
 			Vertex *pCurrentVertex = NULL;
             Vec3f *pCurrentNormal = NULL;
+			Vec3f *pCurrentUV = NULL;
 			Triangle *pCurrentTriangle = NULL;
 			MaterialCUDA *pCurrentMaterial = NULL;
-			unsigned totalVertices, totalNormals, totalTriangles = 0, totalMaterials;
-			TriangleMesh mesh;
+			TextureCUDA *pCurrentTexture = NULL;
+			unsigned totalVertices, totalNormals, totalUVs, totalTriangles = 0, totalMaterials, totalTextures;
 					
-			std::ifstream ifs(filenamestring.c_str(), std::ifstream::in);
-
-			if (!ifs.good())
+			FILE *pfile = fopen(filenamestring.c_str(), "rb");
+			if (!pfile)
 			{
-				std::cout << "ERROR: loading obj:(" << filename << ") file not found or not good" << "\n";
-				system("PAUSE");
-				exit(0);
+				// 读取文件失败，直接返回
+				return;
 			}
 
+			MemoryFile *mf = new MemoryFile(10000000);
 			MATERIALCONTAINER *curMaterialSet = NULL;
+			unsigned int curfilepointer = 0;                                    
 			int curMaterialIndex = 0;
-			std::string line, key;
-			while (!ifs.eof() && std::getline(ifs, line)) {
-			    key = "";
-			    std::stringstream stringstream(line);
-			    stringstream >> key >> std::ws;
-
-			    // if (sscanf(buffer, "v %f %f %f", &f1, &f2, &f3) == 3){
-			    // mesh.verts.push_back(Vec3f(f1, f2, f3));
-
-				if (key == "mtllib")
+			char strCommand[256] = {0};
+			char strString[256] = {0};
+			while (!feof(pfile))
+			{
+				mf->IgnoreGap();
+				if (mf->CheckEnd())
 				{
-					std::string filename;
-					if (!stringstream.eof()) {
-						stringstream >> filename >> std::ws;
-						curMaterialSet = &g_MaterialContainer;
-					}
+					if (!mf->ReadFromFile(pfile, curfilepointer))
+						break;
+					curfilepointer += mf->CutOffEndByChar('\n');
+					fseek(pfile, curfilepointer, SEEK_SET);  
 				}
-				else if (key == "usemtl")
+
+				mf->ReadstrUntilGap(strCommand);
+				if(0 == strcmp(strCommand, "#"))
+				{
+					// 注释
+				}
+				else if(0 == strcmp(strCommand, "mtllib"))
+				{
+					mf->ReadstrUntilGap(strString);
+					curMaterialSet = &g_MaterialContainer;
+				}
+				else if(0 == strcmp(strCommand, "usemtl"))
 				{
 					// Material
-					std::string materialname;
-					if (!stringstream.eof()) {
-						stringstream >> materialname >> std::ws;
-						bool bFound = false;
-						if (curMaterialSet != NULL)
+					char materialname[MAX_PATH] = {0};
+					mf->ReadstrUntilGap(materialname);
+
+					bool bFound = false;
+					if (curMaterialSet != NULL)
+					{
+						for(int iMaterial = 0; iMaterial < curMaterialSet->arrayMaterial.size(); iMaterial++)
 						{
-							for(int iMaterial = 0; iMaterial < curMaterialSet->arrayMaterial.size(); iMaterial++)
+							if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname) == 0)
 							{
-								if(strcmp(curMaterialSet->arrayMaterial[iMaterial]->m_szNameMtl, materialname.c_str()) == 0)
-								{
-									bFound = true;
-									curMaterialIndex = iMaterial + 1;
-									break;
-								}
+								bFound = true;
+								curMaterialIndex = iMaterial + 1;
+								break;
 							}
 						}
+					}
 						
-						// 若没找到材质为空
-						if(!bFound)
-						{
-							curMaterialIndex = 0;
-							char szName[128] = " ";
-							printf(szName, "Error：Material %s cannot be found！", materialname.c_str());
-						}
+					// 若没找到材质为空
+					if(!bFound)
+					{
+						curMaterialIndex = 0;
+						char szName[128] = " ";
+						printf(szName, "Error：Material %s cannot be found！", materialname);
 					}
 				}
-			    else if (key == "v") { // vertex	
-				    float x, y, z;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
-					    mesh.verts.push_back(Vec3f(x, y, z));
-				    }
-			    }
-			    else if (key == "vp") { // parameter
-				    float x;
-				    // std::vector<float> tempparameters;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws;
-					    // tempparameters.push_back(x);
-				    }
-				    //parameters.push_back(tempparameters);
-			    }
-			    else if (key == "vt") { // texture coordinate
-				    float x;
-				    // std::vector<float> temptexcoords;
-				    while (!stringstream.eof()) {
-					    stringstream >> x >> std::ws;
-					    // temptexcoords.push_back(x);
-				    }
-				    //texcoords.push_back(temptexcoords);
-			    }
-			    else if (key == "vn") { // normal
-				    float x, y, z;
-				    // std::vector<float> tempnormals;
-				    while (!stringstream.eof()) {
-                        stringstream >> x >> std::ws >> y >> std::ws >> z >> std::ws;
-                        mesh.nors.push_back(Vec3f(x, y, z));
-					    //	tempnormals.push_back(x);
-				    }
-				    //tempnormal.normalize();
-				    //normals.push_back(tempnormals);
-			    }
-			    else if (key == "f") { // face
+				else if(0 == strcmp(strCommand, "v"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.verts.push_back(Vec3f(x, y, z));
+				}
+				else if(0 == strcmp(strCommand, "vt"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.uvs.push_back(Vec3f(x, y, z));
+				}
+				else if(0 == strcmp(strCommand, "vn"))
+				{
+					float x = mf->Readfloat();
+					float y = mf->Readfloat();
+					float z = mf->Readfloat();
+					mesh.nors.push_back(Vec3f(x, y, z));
+				}
+			    else if (0 == strcmp(strCommand, "f")) { // face
 				    face f;
 				    int v, t, n;
-				    while (!stringstream.eof()) {
-					    stringstream >> v >> std::ws;
+				    for (int iFace = 0; iFace < 3; iFace++)
+					{
+					    v = mf->Readint();
 					    f.vertex.push_back(v); // v - 1
-					    if (stringstream.peek() == '/') {
-						    stringstream.get();
-						    if (stringstream.peek() == '/') {
-							    stringstream.get();
-							    stringstream >> n >> std::ws;
-							    f.normal.push_back(n - 1);
-						    }
-						    else {
-							    stringstream >> t >> std::ws;
-							    f.texture.push_back(t - 1);
-							    if (stringstream.peek() == '/') {
-								    stringstream.get();
-								    stringstream >> n >> std::ws;
-								    f.normal.push_back(n - 1);
-							    }
-						    }
-					    }
+						if('/' == mf->Peekchar())
+						{
+							mf->IgnoreUntilchar('/');
+							if('/' != mf->Peekchar())
+							{
+								t = mf->Readint();
+								f.texture.push_back(t - 1);
+							}
+
+							if('/' == mf->Peekchar())
+							{
+								mf->IgnoreUntilchar('/');
+								n = mf->Readint();
+								f.normal.push_back(n - 1);
+							}
+						}
 				    }
 
 			        int numtriangles = f.vertex.size() - 2; // 1 triangle if 3 vertices, 2 if 4 etc
 
-			        for (int i = 0; i < numtriangles; i++){  // first vertex remains the same for all triangles in a triangle fan
-			        mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
-                    mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
-					mesh.materialIndexs.push_back(curMaterialIndex);
+			        for (int i = 0; i < numtriangles; i++)
+					{  
+						// first vertex remains the same for all triangles in a triangle fan
+						mesh.faceVertIndexs.push_back(Vec3i(f.vertex[0], f.vertex[i + 1], f.vertex[i + 2]));
+						mesh.faceNorIndexs.push_back(Vec3i(f.normal[0], f.normal[i + 1], f.normal[i + 2]));
+						if (f.texture.size() <= i + 2)
+						{
+							mesh.faceUvIndexs.push_back(Vec3i(0, 0, 0));
+						}
+						else
+						{
+							mesh.faceUvIndexs.push_back(Vec3i(f.texture[0], f.texture[i + 1], f.texture[i + 2]));
+						}
+						mesh.materialIndexs.push_back(curMaterialIndex);
+					}
+			    }
+			    else 
+				{
+
 			    }
 
-			    //while (stream >> v_extra) {
-			    //	v2 = v3;
-			    //	v3 = v_extra;
-			    //	mesh.faces.push_back(Vec3i(v1, v2, v3));
-			    //}
-			    }
-			    else {
-			    }
+				mf->IgnoreUntilchar('\n');
 					
 			} // end of while loop
 
+			// delete memoryfile
+			delete mf;
+
 			totalVertices = mesh.verts.size();
             totalNormals = mesh.nors.size();
+            totalUVs = mesh.uvs.size();
 			totalTriangles = mesh.faceVertIndexs.size();
 			totalMaterials = g_MaterialContainer.arrayMaterial.size() + 1;
+			totalTextures = g_TextureContainer.arrayTexture.size();
 
-			vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
-			verticesNo = totalVertices;
-			pCurrentVertex = vertices;
+			scene_info.vertices = (Vertex *)malloc(totalVertices*sizeof(Vertex));
+			scene_info.verticesNo = totalVertices;
+			pCurrentVertex = scene_info.vertices;
 
-            normals = (Vec3f*)malloc(totalNormals*sizeof(Vec3f));
-            normalsNo = totalNormals;
-            pCurrentNormal = normals;
+            scene_info.normals = (Vec3f*)malloc(totalNormals*sizeof(Vec3f));
+            scene_info.normalsNo = totalNormals;
+            pCurrentNormal = scene_info.normals;
 
-			triangles = (Triangle *)malloc(totalTriangles*sizeof(Triangle));
-			trianglesNo = totalTriangles;
-			pCurrentTriangle = triangles;
+			scene_info.triangles = (Triangle *)malloc(totalTriangles*sizeof(Triangle));
+			scene_info.trianglesNo = totalTriangles;
+			pCurrentTriangle = scene_info.triangles;
 
-			materials = (MaterialCUDA*)malloc(totalMaterials*sizeof(MaterialCUDA));
-			materialNo = totalMaterials;
-			pCurrentMaterial = materials;
+			scene_info.materials = (MaterialCUDA*)malloc(totalMaterials*sizeof(MaterialCUDA));
+			scene_info.materialNo = totalMaterials;
+			pCurrentMaterial = scene_info.materials;
 
+			scene_info.textures = (TextureCUDA*)malloc(totalTextures*sizeof(TextureCUDA));
+			scene_info.textureNo = totalTextures;
+			pCurrentTexture = scene_info.textures;
+
+			scene_info.uvs = (Vec3f*)malloc(totalUVs*sizeof(Vec3f));
+            scene_info.uvNo = totalUVs;
+            pCurrentUV = scene_info.uvs;
 
 			std::cout << "total vertices: " << totalVertices << "\n";
             std::cout << "total normals: " << totalNormals << "\n";
@@ -291,7 +301,29 @@ void load_object(const char *filename)
                 pCurrentNormal++;
             }
 
-			for (int i = 0; i < materialNo; i++){
+			for (int i = 0; i < totalUVs; i++){
+                Vec3f currentuv = mesh.uvs[i];
+                pCurrentUV->x = currentuv.x;
+                pCurrentUV->y = currentuv.y;
+                pCurrentUV->z = currentuv.z;
+
+                pCurrentUV++;
+            }
+
+			int start_index = 0;
+			for (int i = 0; i < scene_info.textureNo; i++){
+				Texture *currenttex = g_TextureContainer.arrayTexture[i];
+
+				pCurrentTexture->texels = currenttex->m_Bitmap;
+				pCurrentTexture->height = currenttex->GetHeight();
+				pCurrentTexture->width = currenttex->GetWidth();
+				pCurrentTexture->start_index = start_index;
+				start_index += pCurrentTexture->height * pCurrentTexture->width;
+                pCurrentTexture++;
+            }
+			scene_info.textotalsize = start_index;
+
+			for (int i = 0; i < scene_info.materialNo; i++){
 				if(i == 0)
 				{
 					pCurrentMaterial->m_ColorReflect = 0;
@@ -299,6 +331,7 @@ void load_object(const char *filename)
 					pCurrentMaterial->m_transparencyRate = 0;
 					pCurrentMaterial->m_glossiness = 0;
 					pCurrentMaterial->m_ior = 0;
+					pCurrentMaterial->m_textureIndex = -1;
 				}
 				else
 				{
@@ -309,11 +342,17 @@ void load_object(const char *filename)
 					pCurrentMaterial->m_transparencyRate = currentmat->m_transparencyRate;
 					pCurrentMaterial->m_glossiness = currentmat->m_glossiness;
 					pCurrentMaterial->m_ior = currentmat->m_ior;
+					if (currentmat->m_pTexture)
+					{
+						pCurrentMaterial->m_textureIndex = currentmat->m_pTexture->m_index;
+					}
+					else
+					{
+						pCurrentMaterial->m_textureIndex = -1;
+					}
 				}
                 pCurrentMaterial++;
             }
-
-
             std::cout << "Normals loaded\n";
 
 //			for (int i = 0; i < totalTriangles; i++)
@@ -323,6 +362,7 @@ void load_object(const char *filename)
 				
 				Vec3i currentfaceinds = mesh.faceVertIndexs[totalTriangles];
                 Vec3i currentnorminds = mesh.faceNorIndexs[totalTriangles];
+                Vec3i currentuvs = mesh.faceUvIndexs[totalTriangles];
 
 				pCurrentTriangle->m_idx = mesh.materialIndexs[totalTriangles];
 
@@ -330,13 +370,17 @@ void load_object(const char *filename)
 				pCurrentTriangle->v_idx2 = currentfaceinds.y - 1;
 				pCurrentTriangle->v_idx3 = currentfaceinds.z - 1;
 
+				pCurrentTriangle->uv_idx1 = currentuvs.x;
+				pCurrentTriangle->uv_idx2 = currentuvs.y;
+				pCurrentTriangle->uv_idx3 = currentuvs.z;
+
                 pCurrentTriangle->n_idx1 = currentnorminds.x;
                 pCurrentTriangle->n_idx2 = currentnorminds.y;
                 pCurrentTriangle->n_idx3 = currentnorminds.z;
 
-				Vertex *vertexA = &vertices[currentfaceinds.x - 1];
-				Vertex *vertexB = &vertices[currentfaceinds.y - 1];
-				Vertex *vertexC = &vertices[currentfaceinds.z - 1];
+				Vertex *vertexA = &scene_info.vertices[currentfaceinds.x - 1];
+				Vertex *vertexB = &scene_info.vertices[currentfaceinds.y - 1];
+				Vertex *vertexC = &scene_info.vertices[currentfaceinds.z - 1];
 
 
 				pCurrentTriangle->_center = Vec3f(
@@ -354,10 +398,12 @@ void load_object(const char *filename)
 	else
 		panic("No extension in filename (only .ply accepted)");
 
-	std::cout << "Vertices:  " << verticesNo << std::endl;
-    std::cout << "Normals:  " << normalsNo << std::endl;
-	std::cout << "Triangles: " << trianglesNo << std::endl;
-	std::cout << "Materials: " << materialNo << std::endl;
+	std::cout << "Vertices:  " << scene_info.verticesNo << std::endl;
+    std::cout << "Normals:  " << scene_info.normalsNo << std::endl;
+	std::cout << "Triangles: " << scene_info.trianglesNo << std::endl;
+	std::cout << "Materials: " << scene_info.materialNo << std::endl;
+	std::cout << "UVs: " << scene_info.uvNo << std::endl;
+	std::cout << "Textures: " << scene_info.textureNo << std::endl;
 }
 
 Vec3f degamma(float r, float g, float b)
@@ -367,7 +413,7 @@ Vec3f degamma(float r, float g, float b)
 
 void load_material(const char* strFileName)
 {
-	int index = 0;
+	int index = 0, tex_index = 0;
     char strTexPath[MAX_PATH];
     char strCommand[256] = {0};
     std::ifstream InFile(strFileName);
@@ -409,7 +455,7 @@ void load_material(const char* strFileName)
 
             float r, g, b, average;
             InFile>>r>>g>>b;
-			pMaterial->m_ColorReflect = degamma(r, g, b);
+			pMaterial->m_ColorReflect = Vec3f(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ni"))
         {
@@ -432,7 +478,7 @@ void load_material(const char* strFileName)
 				g *= weight;
 				b *= weight;
 			}
-			pMaterial->m_SpecColorReflect = degamma(r, g, b);
+			pMaterial->m_SpecColorReflect = Vec3f(r, g, b);
         }
 		else if(0 == strcmp(strCommand, "Ke"))
         {
@@ -458,6 +504,27 @@ void load_material(const char* strFileName)
             int nShininess;
             InFile>>nShininess;
 			pMaterial->m_glossiness = nShininess;
+        }
+		else if(0 == strcmp(strCommand, "map_Kd"))
+        {
+            // 纹理
+            InFile>>strTexPath;
+			Texture *ptmp = g_TextureContainer.FindTexByName(strTexPath);
+			if (ptmp == NULL)
+			{
+				ptmp = new Texture(strTexPath, BITMAP24, 0);
+				if (ptmp->GetBitmap() != NULL)
+				{
+					ptmp->m_index = tex_index;
+					g_TextureContainer.AddTexture(ptmp);
+					tex_index++;
+					pMaterial->m_pTexture = ptmp;
+				}
+			}
+			else
+			{
+				pMaterial->m_pTexture = ptmp;
+			}
         }
         else if(0 == strcmp(strCommand, "illum"))
         {
@@ -488,15 +555,15 @@ float processgeo(){
 
 	// calculate min and max bounds of scene
 	// loop over all triangles in scene, grow minp and maxp
-	for (unsigned i = 0; i<trianglesNo; i++) {
+	for (unsigned i = 0; i < scene_info.trianglesNo; i++) {
 
-		minp = min3f(minp, vertices[triangles[i].v_idx1]);
-		minp = min3f(minp, vertices[triangles[i].v_idx2]);
-		minp = min3f(minp, vertices[triangles[i].v_idx3]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx1]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx2]);
+		minp = min3f(minp, scene_info.vertices[scene_info.triangles[i].v_idx3]);
 
-		maxp = max3f(maxp, vertices[triangles[i].v_idx1]);
-		maxp = max3f(maxp, vertices[triangles[i].v_idx2]);
-		maxp = max3f(maxp, vertices[triangles[i].v_idx3]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx1]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx2]);
+		maxp = max3f(maxp, scene_info.vertices[scene_info.triangles[i].v_idx3]);
 	}
 
 	// scene bounding box center before scaling and translating
@@ -522,11 +589,11 @@ float processgeo(){
 	std::cout << "Center origin: " << origCenter.x << " " << origCenter.y << " " << origCenter.z << "\n";
 
 	std::cout << "\nCentering and scaling vertices..." << std::endl;
-	for (unsigned i = 0; i<verticesNo; i++) {
-		vertices[i] -= origCenter;
+	for (unsigned i = 0; i<scene_info.verticesNo; i++) {
+		scene_info.vertices[i] -= origCenter;
 		//vertices[i].y += origCenter.y;
 		//vertices[i] *= (MaxCoordAfterRescale / maxi);
-		vertices[i] *= 20; // 0.25
+		scene_info.vertices[i] *= 20; // 0.25
 	}
 
 	return MaxCoordAfterRescale;

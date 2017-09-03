@@ -96,18 +96,17 @@ public:
 	~CudaBVH(void);
 
 	BVHLayout   getLayout(void) const            { return m_layout; }
-	Array<Vec4i>&  getNodeBuffer(void)            { return m_nodes; }
-	Array<Vec4i>&  getTriWoopBuffer(void)         { return m_triWoop; }
-	Array<S32>&    getTriIndexBuffer(void)        { return m_triIndex; }
 
 	Vec4i*  getGpuNodes(void)            { return m_gpuNodes; }
-	Vec4i*  getGpuTriWoop(void)         { return m_gpuTriWoop; }
+	Vec4i*  getGpuTriNormal(void)         { return m_gpuTriNormal; }
 	Vec4i*  getDebugTri(void)			{ return m_debugTri;  }
+	Vec4f*  getUVTri(void)				{ return m_UVTri;  }
 	S32*    getGpuTriIndices(void)        { return m_gpuTriIndices; }
 
 	U32    getGpuNodesSize(void)			{ return m_gpuNodesSize; }
-	U32    getGpuTriWoopSize(void)			{ return m_gpuTriWoopSize; }
+	U32    getGpuTriNormalSize(void)			{ return m_gpuTriNormalSize; }
 	U32    getDebugTriSize(void)			{ return m_debugTriSize; }
+	U32    getUVTriSize(void)			{ return m_UVTriSize; }
 	U32    getGpuTriIndicesSize(void)        { return m_gpuTriIndicesSize; }
 	U32    getLeafnodeCount(void)			{ return m_leafnodecount; }
 	U32    getTriCount(void)			{ return m_tricount; }
@@ -115,32 +114,30 @@ public:
 	// AOS: idx ignored, returns entire buffer
 	// SOA: 0 <= idx < 4, returns one subarray  // idx between 0 and 4
 	Vec2i       getNodeSubArray(int idx) const; // (ofs, size)
-	Vec2i       getTriWoopSubArray(int idx) const; // (ofs, size)
+	Vec2i       getTriNormalSubArray(int idx) const; // (ofs, size)
 
 	CudaBVH&    operator=(CudaBVH& other);
 
 private:
 	void        createNodeBasic(const BVH& bvh);
-	void        createTriWoopBasic(const BVH& bvh);
+	void        createTriNormalBasic(const BVH& bvh);
 	void        createTriIndexBasic(const BVH& bvh);
 	void        createCompact(const BVH& bvh, int nodeOffsetSizeDiv);
 	void        woopifyTri(const BVH& bvh, int idx);
 
 private:
 	BVHLayout   m_layout;
-	
-	Array<Vec4i>      m_nodes; 
-	Array<Vec4i>      m_triWoop;
-	Array<S32>        m_triIndex;
 
 	Vec4i*	m_gpuNodes;
-	Vec4i*  m_gpuTriWoop;
+	Vec4i*  m_gpuTriNormal;
 	Vec4i*  m_debugTri;
+	Vec4f*  m_UVTri;
 	S32*	m_gpuTriIndices;
 
 	U32     m_gpuNodesSize;
-	U32		m_gpuTriWoopSize;
+	U32		m_gpuTriNormalSize;
 	U32     m_debugTriSize;
+	U32     m_UVTriSize;
 	U32		m_gpuTriIndicesSize;
 	U32		m_leafnodecount;
 	U32     m_tricount;
@@ -149,6 +146,7 @@ private:
 	Vec4f   m_woop[3];
 	Vec4f	m_debugtri[3];
     Vec4f   m_normaltri[3];
+    Vec4f   m_uvtri[3];
 };
 
 //------------------------------------------------------------------------

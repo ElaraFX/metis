@@ -37,6 +37,7 @@ public:
 	{
 		Vec3i       verticeIndex;   //3 vertex indices of triangle
 		Vec3i       normalIndex;
+		Vec3i       uvIndex;
 		int			materialIndex;
 		Triangle() : verticeIndex(Vec3i(0, 0, 0)), normalIndex(Vec3f(0, 0, 0)) {}
 	};

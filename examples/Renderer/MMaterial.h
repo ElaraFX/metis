@@ -1,8 +1,11 @@
 #pragma once
 #include <vector>
 #include "linear_math.h"
+#include "MTexture.h"
 
 #define MAX_PATH 260
+
+struct TextureCUDA;
 
 struct MMaterial
 {
@@ -14,6 +17,7 @@ struct MMaterial
 	float m_ior;
 	int m_index;
 	char m_szNameMtl[MAX_PATH];	    // 材质名称
+	Texture *m_pTexture;
 
 	// 成员函数
 	MMaterial();
@@ -24,9 +28,10 @@ struct MaterialCUDA
 {
 	Vec3f m_ColorReflect;		// RGB三种颜色的反射率(物体颜色)(注意:一定保证取值范围在[0,1],不然可能会出错)
 	Vec3f m_SpecColorReflect;	// RGB三种颜色的镜面反射率(物体颜色)(注意:一定保证取值范围在[0,1],不然可能会出错)
-	float m_transparencyRate;		// 
+	float m_transparencyRate;	// 
 	float m_glossiness;
 	float m_ior;
+	int m_textureIndex;
 };
 
 // 以一个文件为单位

@@ -1,5 +1,4 @@
-// BVH traversal kernels based on "Understanding the 
-
+#pragma once
 #include <cuda.h>
 #include <math_functions.h>
 #include <vector_types.h>
@@ -20,20 +19,15 @@
 #define F32_MIN          (1.175494351e-38f)
 #define F32_MAX          (3.402823466e+38f)
 
-#define HDRwidth 3200
-#define HDRheight 1600
 #define HDR
 #define EntrypointSentinel 0x76543210
 #define MaxBlockHeight 6
 
-enum Refl_t { DIFF, METAL, SPEC, REFR, COAT };  // material types
 
 // CUDA textures containing scene data
-texture<float4, 1, cudaReadModeElementType> bvhNodesTexture;
-//texture<float4, 1, cudaReadModeElementType> triWoopTexture;
-texture<float4, 1, cudaReadModeElementType> triNormalsTexture;
-texture<int, 1, cudaReadModeElementType> triIndicesTexture;
-texture<float4, 1, cudaReadModeElementType> HDRtexture;
+texture<float4, cudaTextureType2D, cudaReadModeElementType> HDRtexture;
+//texture<float4, 1, cudaReadModeElementType> HDRtexture;
+//texture<float4, cudaTextureType2D, cudaReadModeElementType> Alltexture[30];
 
 __device__ inline Vec3f absmax3f(const Vec3f& v1, const Vec3f& v2){
 	return Vec3f(v1.x*v1.x > v2.x*v2.x ? v1.x : v2.x, v1.y*v1.y > v2.y*v2.y ? v1.y : v2.y, v1.z*v1.z > v2.z*v2.z ? v1.z : v2.z);
@@ -45,49 +39,7 @@ struct Ray {
 	__device__ Ray(float3 o_, float3 d_) : orig(o_), dir(d_) {}
 };
 
-struct Sphere {
-
-	float rad;				// radius 
-	float3 pos, emi, col;	// position, emission, color 
-	Refl_t refl;			// reflection type (DIFFuse, SPECular, REFRactive)
-
-	__device__ float intersect(const Ray &r) const { // returns distance, 0 if nohit 
-
-		// ray/sphere intersection
-		float3 op = pos - r.orig;   
-		float t, epsilon = 0.01f;
-		float b = dot(op, r.dir);
-		float disc = b*b - dot(op, op) + rad*rad; // discriminant of quadratic formula
-		if (disc<0) return 0; else disc = sqrtf(disc);
-		return (t = b - disc) > epsilon ? t : ((t = b + disc) > epsilon ? t : 0.0f);
-	}
-};
-
-__constant__ Sphere spheres[] = {
-	// sun
-	//{ 10000, { 50.0f, 40.8f, -1060 }, { 0.3, 0.3, 0.3 }, { 0.175f, 0.175f, 0.25f }, DIFF }, // sky   0.003, 0.003, 0.003	
-	//{ 4.5, { 0.0f, 12.5, 0 }, { 6, 4, 1 }, { .6f, .6f, 0.6f }, DIFF },  /// lightsource	
-	//{ 10000.02, { 50.0f, -10001.35, 0 }, { 0.0, 0.0, 0 }, { 0.3f, 0.3f, 0.3f }, DIFF }, // ground  300/-301.0
-	//{ 10000, { 50.0f, -10000.1, 0 }, { 0, 0, 0 }, { 0.3f, 0.3f, 0.3f }, DIFF }, // double shell to prevent light leaking
-	//{ 110000, { 50.0f, -110048.5, 0 }, { 3.6, 2.0, 0.2 }, { 0.f, 0.f, 0.f }, DIFF },  // horizon brightener
-	
-	//{ 0.5, { 30.0f, 180.5, 42 }, { 0, 0, 0 }, { .6f, .6f, 0.6f }, DIFF },  // small sphere 1  
-	//{ 0.8, { 2.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, SPEC },  // small sphere 2
-	//{ 0.8, { -3.0f, 0.f, 0 }, { 0.0, 0.0, 0.0 }, { 0.0f, 0.0f, 0.2f }, COAT },  // small sphere 2
-	{ 0.008, { -6.0f, 0.5f, 0.0f }, { 0.0, 0.0, 0.0 }, { 0.9f, 0.9f, 0.9f }, SPEC },  // small sphere 2
-	//{ 0.6, { -10.0f, -2.f, 1.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, DIFF },  // small sphere 2
-	//{ 0.8, { -1.0f, -0.7f, 4.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.8f }, REFR },  // small sphere 2
-	//{ 9.4, { 9.0f, 0.f, -9.0f }, { 0.0, 0.0, 0.0 }, { 0.8f, 0.8f, 0.f }, DIFF },  // small sphere 2
-	//{ 22, { 105.0f, 22, 24 }, { 0, 0, 0 }, { 0.9f, 0.9f, 0.9f }, DIFF }, // small sphere 3
-};
-
-
 //  RAY BOX INTERSECTION ROUTINES
-
-// Experimentally determined best mix of float/int/video minmax instructions for Kepler.
-
-// float c0min = spanBeginKepler2(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, tmin); // Tesla does max4(min, min, min, tmin)
-// float c0max = spanEndKepler2(c0lox, c0hix, c0loy, c0hiy, c0loz, c0hiz, hitT); // Tesla does min4(max, max, max, tmax)
 
 // Perform min/max operations in hardware
 // Using Kepler's video instructions, see http://docs.nvidia.com/cuda/parallel-thread-execution/#axzz3jbhbcTZf																			//  : "=r"(v) overwrites v and puts it in a register
@@ -104,35 +56,6 @@ __device__ __inline__ float fmax_fmax(float a, float b, float c) { return __int_
 
 __device__ __inline__ float spanBeginKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d){ return fmax_fmax(fminf(a0, a1), fminf(b0, b1), fmin_fmax(c0, c1, d)); }
 __device__ __inline__ float spanEndKepler(float a0, float a1, float b0, float b1, float c0, float c1, float d)	{ return fmin_fmin(fmaxf(a0, a1), fmaxf(b0, b1), fmax_fmin(c0, c1, d)); }
-
-// standard ray box intersection routines (for debugging purposes only)
-// based on Intersect::RayBox() in original Aila/Laine code
-__device__ __inline__ float spanBeginKepler2(float lo_x, float hi_x, float lo_y, float hi_y, float lo_z, float hi_z, float d){ 
-
-	Vec3f t0 = Vec3f(lo_x, lo_y, lo_z);
-	Vec3f t1 = Vec3f(hi_x, hi_y, hi_z);
-	
-	Vec3f realmin = min3f(t0, t1);
-
-	float raybox_tmin = realmin.max(); // maxmin
-
-	//return Vec2f(tmin, tmax);
-	return raybox_tmin;
-}
-
-__device__ __inline__ float spanEndKepler2(float lo_x, float hi_x, float lo_y, float hi_y, float lo_z, float hi_z, float d){
-
-	Vec3f t0 = Vec3f(lo_x, lo_y, lo_z);
-	Vec3f t1 = Vec3f(hi_x, hi_y, hi_z);
-
-	Vec3f realmax = max3f(t0, t1);
-
-	float raybox_tmax = realmax.min(); /// minmax
-
-	//return Vec2f(tmin, tmax);
-	return raybox_tmax;
-}
-
 __device__ __inline__ void swap2(int& a, int& b){ int temp = a; a = b; b = temp;}
 
 // standard ray triangle intersection routines (for debugging purposes only)
@@ -192,7 +115,7 @@ __device__ Vec3f intersectRayTriangle(const Vec3f& v0, const Vec3f& v1, const Ve
 // modified intersection routine (uses regular instead of woopified triangles) for debugging purposes
 
 __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4 raydir,
-	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices,
+	const float4* gpuNodes, const float4* gpuTriNormal, const float4* gpuDebugTris, const int* gpuTriIndices,
 	int& hitTriIdx, float& hitdistance, int& debugbingo, Vec3f& trinormal, int leafcount, int tricount, bool needClosestHit){
 
 	int traversalStack[STACK_SIZE];
@@ -358,9 +281,9 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 				float4 v1f = gpuDebugTris[triAddr + 1];
 				float4 v2f = gpuDebugTris[triAddr + 2];
 
-                float4 n0f = gpuTriWoops[triAddr + 0];
-                float4 n1f = gpuTriWoops[triAddr + 1];
-				float4 n2f = gpuTriWoops[triAddr + 2];
+                float4 n0f = gpuTriNormal[triAddr + 0];
+                float4 n1f = gpuTriNormal[triAddr + 1];
+				float4 n2f = gpuTriNormal[triAddr + 2];
 
 				const Vec3f v0 = Vec3f(v0f.x, v0f.y, v0f.z);
 				const Vec3f v1 = Vec3f(v1f.x, v1f.y, v1f.z);
@@ -425,13 +348,13 @@ __device__ void DEBUGintersectBVHandTriangles(const float4 rayorig, const float4
 	hitdistance =  hitT;
 }
 
-__device__ void intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
-	const float4* gpuNodes, const float4* gpuTriWoops, const float4* gpuDebugTris, const int* gpuTriIndices, 
-	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, int leafcount, int tricount, bool anyHit)
+__device__ int intersectBVHandTriangles(const float4 rayorig, const float4 raydir,
+	const float4* gpuNodes, const float4* gpuTriNormal, const float4* gpuDebugTris, const int* gpuTriIndices, 
+	int& hitTriIdx, int& hitMaterial, float& hitdistance, int& debugbingo, Vec3f& trinormal, Vec3f& ng, Vec3f& tribary, int leafcount, int tricount, bool anyHit)
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	// global threadId, see richiesams blogspot
-	int thread_index = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
+	//int thread_index = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	///////////////////////////////////////////
 	//// FERMI / KEPLER KERNEL
@@ -443,12 +366,9 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 	// createCompact(bvh,1); for Compact
 
 	int traversalStack[STACK_SIZE];
-
 	// Live state during traversal, stored in registers.
 
-	int		rayidx;		// not used, can be removed
 	float   origx, origy, origz;    // Ray origin.
-	float   dirx, diry, dirz;       // Ray direction.
 	float   tmin;                   // t-value from which the ray starts. Usually 0.
 	float   idirx, idiry, idirz;    // 1 / ray direction
 	float   oodx, oody, oodz;       // ray origin / ray direction
@@ -459,6 +379,7 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 	int     hitIndex;               // Triangle index of the closest intersection, -1 if none.
 	int		hitMat;
 	float   hitT;                   // t-value of the closest intersection.
+	Vec3f   bary(0, 0, 0);
 	// Kepler kernel only
 	//int     leafAddr2;              // Second postponed leaf, non-negative if none.  
 	//int     nodeAddr = EntrypointSentinel; // Non-negative: current internal node, negative: second postponed leaf.
@@ -482,9 +403,6 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 		origx = rayorig.x;
 		origy = rayorig.y;
 		origz = rayorig.z;
-		dirx = raydir.x;
-		diry = raydir.y;
-		dirz = raydir.z;
 		tmin = rayorig.w;
 
 		// ooeps is very small number, used instead of raydir xyz component when that component is near zero
@@ -651,9 +569,9 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 				float4 v1f = gpuDebugTris[triAddr + 1];
 				float4 v2f = gpuDebugTris[triAddr + 2];
 
-                float4 n0f = gpuTriWoops[triAddr + 0];
-                float4 n1f = gpuTriWoops[triAddr + 1];
-				float4 n2f = gpuTriWoops[triAddr + 2];
+                float4 n0f = gpuTriNormal[triAddr + 0];
+                float4 n1f = gpuTriNormal[triAddr + 1];
+				float4 n2f = gpuTriNormal[triAddr + 2];
 
 				const Vec3f v0 = Vec3f(v0f.x, v0f.y, v0f.z);
 				const Vec3f v1 = Vec3f(v1f.x, v1f.y, v1f.z);
@@ -668,28 +586,32 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 				Vec4f rayorigvec4f = Vec4f(rayorig.x, rayorig.y, rayorig.z, rayorig.w);
 				Vec4f raydirvec4f = Vec4f(raydir.x, raydir.y, raydir.z, raydir.w);
 
-				Vec3f bary = intersectRayTriangle(v0, v1, v2, rayorigvec4f, raydirvec4f);
+				bary = intersectRayTriangle(v0, v1, v2, rayorigvec4f, raydirvec4f);
 
                 float u = bary.x;
 				float v = bary.y;
 				float t = bary.z; // hit distance along ray
 
 				if (t > tmin && t < hitT)   // if there is a miss, t will be larger than hitT (ray.tmax)
-					{								
-						hitIndex = triAddr;
-						hitT = t;  /// keeps track of closest hitpoint
+				{								
+					hitIndex = triAddr;
+					hitT = t;  /// keeps track of closest hitpoint
 
-						ng = cross(v0 - v1, v0 - v2);
-                        trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
-						trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
-						trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
+					ng = cross(v0 - v1, v0 - v2);
+                    trinormal.x = (1 - v - u) * n0.x + u * n1.x + v * n2.x;
+					trinormal.y = (1 - v - u) * n0.y + u * n1.y + v * n2.y;
+					trinormal.z = (1 - v - u) * n0.z + u * n1.z + v * n2.z;
+
+					tribary.x = bary.x;
+					tribary.y = bary.y;
+					tribary.z = bary.z;
 						
-						if (anyHit)  // only true for shadow rays
-							{
-								nodeAddr = EntrypointSentinel;
-								break;
-							}
+					if (anyHit)  // only true for shadow rays
+					{
+						nodeAddr = EntrypointSentinel;
+						break;
 					}
+				}
 
 			} // triangle
 
@@ -717,6 +639,8 @@ __device__ void intersectBVHandTriangles(const float4 rayorig, const float4 rayd
 	hitTriIdx = hitIndex;
 	hitMaterial = hitMat;
 	hitdistance = hitT;
+
+	return 0;
 }
 
 
@@ -727,24 +651,73 @@ union Colour  // 4 bytes = 4 chars = 1 float
 	uchar4 components;
 };
 
-__device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3f* normal, float *depth, float *eyecosdepth, float *materialID, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
+__device__ Vec3f GetTexel(float a_U, float a_V, const TextureCUDA *cr, const float4 *texdata)
+{
+	// fetch a bilinearly filtered texel
+	Vec3f ret(0, 0, 0);
+	const float4 *texture = &texdata[cr->start_index];
+	a_U -= int(a_U);
+	a_V -= int(a_V);
+	if (a_U < 0) a_U += 1;
+	if (a_V < 0) a_V += 1;
+	float fu = a_U * (cr->width - 1);
+	float fv = a_V * (cr->height - 1);
+	int u1 = (int)fu;
+	int v1 = (int)fv;
+	int u2 = (u1 + 1) % cr->width;
+	int v2 = (v1 + 1) % cr->height;
+	// calculate fractional parts of u and v
+	float fracu = fu - floorf( fu );
+	float fracv = fv - floorf( fv );
+	// calculate weight factors
+	float w1 = (1 - fracu) * (1 - fracv);
+	float w2 = fracu * (1 - fracv);
+	float w3 = (1 - fracu) * fracv;
+	float w4 = fracu *  fracv;
+	// fetch four texels
+	float4 c1 = texture[u1 + v1 * cr->width];
+	float4 c2 = texture[u2 + v1 * cr->width];
+	float4 c3 = texture[u1 + v2 * cr->width];
+	float4 c4 = texture[u2 + v2 * cr->width];
+	// scale and sum the four colors
+	ret.x = c1.x * w1 + c2.x * w2 + c3.x * w3 + c4.x * w4;
+	ret.y = c1.y * w1 + c2.y * w2 + c3.y * w3 + c4.y * w4;
+	ret.z = c1.z * w1 + c2.z * w2 + c3.z * w3 + c4.z * w4;
+	return ret;
+}
+
+__device__ Vec3f GetTexColor(gpuData *gpudata, int triIdx, MaterialCUDA *material, Vec3f *bary)
+{
+	float tex_u, tex_v;
+	float4 uv0f = gpudata->cudaTriUVPtr[triIdx + 0];
+	float4 uv1f = gpudata->cudaTriUVPtr[triIdx + 1];
+	float4 uv2f = gpudata->cudaTriUVPtr[triIdx + 2];
+	tex_u = (1 - bary->y - bary->x) * uv0f.x + bary->x * uv1f.x + bary->y * uv2f.x;
+	tex_v = (1 - bary->y - bary->x) * uv0f.y + bary->x * uv1f.y + bary->y * uv2f.y;
+	return GetTexel(tex_u, tex_v, &gpudata->cudaTexturePtr[material->m_textureIndex], gpudata->cudaTextureData);
+}
+
+__device__ void GetRidofZero(Vec3f& v)
+{
+	const float EPSILON = 0.00001f;
+	if (v.x < EPSILON) v.x = EPSILON;
+	if (v.y < EPSILON) v.y = EPSILON;
+	if (v.z < EPSILON) v.z = EPSILON;
+}
+
+__device__ Vec3f renderKernel(int pixel_index, curandState* randstate, const float4* HDRmap, Vec3f* normal, float *materialID, gpuData *gpudata, Vec3f& rayorig, Vec3f& raydir, unsigned int leafcount, unsigned int tricount) 
 {
 	Vec3f mask = Vec3f(1.0f, 1.0f, 1.0f); // colour mask
 	Vec3f accucolor = Vec3f(0.0f, 0.0f, 0.0f); // accumulated colour
-	Vec3f direct = Vec3f(0, 0, 0);
+	Vec3f directillumination = Vec3f(1.0f, 1.0f, 1.0f);
 	bool lastmaterialisdiffuse = false; 
+	bool firstbouncespecularcolor = false;
 	for (int bounces = 0; bounces < 4; bounces++){  // iteration up to 4 bounces (instead of recursion in CPU code)
 
-		int hitSphereIdx = -1;
-		int hitTriIdx = -1;
 		int bestTriIdx = -1;
 		int hitMaterial = -1;
-		int geomtype = -1;
-		float hitSphereDist = 1e20;
 		float hitDistance = 1e20;
 		float scene_t = 1e20;
-		Vec3f objcol = Vec3f(0, 0, 0);
 		Vec3f emit = Vec3f(0, 0, 0);
 		Vec3f hitpoint; // intersection point
 		Vec3f n; // normal
@@ -752,7 +725,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		Vec3f nextdir; // ray direction of next path segment
 		Vec3f trinormal = Vec3f(0, 0, 0);
 		Vec3f ng = Vec3f(0, 0, 0);
-		Refl_t refltype;
 		float ray_tmin = 0.00001f; // set to 0.01f when using refractive material
 		float ray_tmax = 1e20;
 		MaterialCUDA material;
@@ -764,8 +736,9 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		//intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
 		//	gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitDistance, debugbingo, trinormal, leafcount, tricount, false);
 
+		Vec3f bary(0, 0, 0);
 		intersectBVHandTriangles(make_float4(rayorig.x, rayorig.y, rayorig.z, ray_tmin), make_float4(raydir.x, raydir.y, raydir.z, ray_tmax),
-		gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, leafcount, tricount, false);
+		gpudata->cudaNodePtr, gpudata->cudaTriNormalPtr, gpudata->cudaTriDebugPtr, gpudata->cudaTriIndicesPtr, bestTriIdx, hitMaterial, hitDistance, debugbingo, trinormal, ng, bary, leafcount, tricount, false);
 
 
 		// intersect all spheres in the scene
@@ -777,8 +750,6 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		if (hitDistance < scene_t && hitDistance > ray_tmin) // triangle hit
 		{
 			scene_t = hitDistance;
-			hitTriIdx = bestTriIdx;
-			geomtype = 2;
 		}
 
 		// sky gradient colour
@@ -789,9 +760,9 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		// HDR 
 
 		if (scene_t > 1e19) { // if ray misses scene, return sky
-			emit = Vec3f(1.2f, 1.2f, 1.3f);
-			accucolor += (mask * emit); 
-			return accucolor; 
+			//emit = Vec3f(1.2f, 1.2f, 1.3f);
+			//accucolor += (mask * emit); 
+			//return accucolor; 
 			// HDR environment map code based on Syntopia "Path tracing 3D fractals"
 			// http://blog.hvidtfeldts.net/index.php/2015/01/path-tracing-3d-fractals/
 			// https://github.com/Syntopia/Fragmentarium/blob/master/Fragmentarium-Source/Examples/Include/IBL-Pathtracer.frag
@@ -801,7 +772,7 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//		vec2 longlat = vec2(atan(dir.y, dir.x) + RotateMap, acos(dir.z));
 			//		return texture2D(sampler, longlat / vec2(2.0*PI, PI)).xyz; }
 
-			//// Convert (normalized) dir to spherical coordinates.
+			// Convert (normalized) dir to spherical coordinates.
 			//float longlatX = atan2f(raydir.x, raydir.z); // Y is up, swap x for y and z for x
 			//longlatX = longlatX < 0.f ? longlatX + TWO_PI : longlatX;  // wrap around full circle if negative
 			//float longlatY = acosf(raydir.y); // add RotateMap at some point, see Fragmentarium
@@ -812,191 +783,120 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 			//float v = longlatY / M_PI ; 
 
 			//// map u, v to integer coordinates
-			//int u2 = (int)(u * HDRwidth); //% HDRwidth;
-			//int v2 = (int)(v * HDRheight); // % HDRheight;
+			//int u2 = (int)(u * gpudata->cudaEnvi->HDRwidth); //% HDRwidth;
+			//int v2 = (int)(v * gpudata->cudaEnvi->HDRheight); // % HDRheight;
 
 			//// compute the texel index in the HDR map 
-			//int HDRtexelidx = u2 + v2 * HDRwidth;
+			//int HDRtexelidx = u2 + v2 * gpudata->cudaEnvi->HDRwidth;
+			////int index = u2 + v2 * g_texCuda.width;
 
 			////float4 HDRcol = HDRmap[HDRtexelidx];
-			//float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			////float4 HDRcol = tex1Dfetch(HDRtexture, HDRtexelidx);  // fetch from texture
+			//float4 HDRcol = tex2D(HDRtexture, u, v);
+			////float4 HDRcol = g_texCuda.Fetch(index);
 			//Vec3f HDRcol2 = Vec3f(HDRcol.x, HDRcol.y, HDRcol.z);
-			Vec3f HDRcol2 = Vec3f(2.5f, 2.5f, 2.5f);
+			Vec3f HDRcol2 = Vec3f(2.0f, 2.0f, 2.0f);
 
-			emit = HDRcol2 * 2.0f;
+			emit = HDRcol2 * 0.6f;
 			accucolor += (mask * emit); 
+			if (bounces == 0)
+			{
+				gpudata->AOVdirectdiffuse[pixel_index] += accucolor;
+				gpudata->AOVindirectdiffuse[pixel_index] += Vec3f(1.0f, 1.0f, 1.0f);
+				gpudata->AOVindirectspecular[pixel_index] += Vec3f(0.0f, 0.0f, 0.0f);
+				gpudata->AOVdiffusecount[pixel_index] += 1;
+			}
+			else
+			{
+				if (!firstbouncespecularcolor)
+				{
+					gpudata->AOVindirectdiffuse[pixel_index] += accucolor / directillumination;
+				}
+				else
+				{
+					gpudata->AOVindirectspecular[pixel_index] += accucolor / directillumination;
+				}
+			}
 			return accucolor; 
 		}
 
 #endif // end of HDR
 
 		// TRIANGLES:
-		if (geomtype == 2){
-			material = mats[hitMaterial];
-			//pBestTri = &pTriangles[triangle_id];
-			hitpoint = rayorig + raydir * scene_t; // intersection point
+		material = gpudata->cudaMaterialsPtr[hitMaterial];
+		//pBestTri = &pTriangles[triangle_id];
+		hitpoint = rayorig + raydir * scene_t; // intersection point
 					
-			// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
-			n = trinormal;
-			n.normalize();
-			nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
-			//Vec3f colour = hitTriIdx->_colorf;
-			Vec3f colour = Vec3f(0.7f, 0.7f, 0.7f); // hardcoded triangle colour  .9f, 0.3f, 0.0f
-			refltype = DIFF; // objectmaterial
-			objcol = colour;
-			emit = Vec3f(0.0, 0.0, 0);  // object emission
-			accucolor += (mask * emit);
-		}
+		// float4 normal = tex1Dfetch(triNormalsTexture, pBestTriIdx);	
+		n = trinormal;
+		n.normalize();
+		nl = dot(ng, raydir) < 0 ? n : n * -1;  // correctly oriented normal
+		//objcol = colour;
+		emit = Vec3f(0.0, 0.0, 0);  // object emission
+		accucolor += (mask * emit);
 
 		// get information for denoise
 		if (bounces == 0)
 		{
 			*normal = Vec3f(n.x, n.y, n.z);
-			*depth = hitDistance;
-			*eyecosdepth = - hitDistance * abs(dot(*normal, raydir.normalize()));
 			*materialID = hitMaterial;
 		}
-
-		// basic material system, all parameters are hard-coded (such as phong exponent, index of refraction)
-
-		// diffuse material, based on smallpt by Kevin Beason 
-		//if (refltype == DIFF){
-
-		//	// pick two random numbers
-		//	float phi = 2 * M_PI * curand_uniform(randstate);
-		//	float r2 = curand_uniform(randstate);
-		//	float r2s = sqrtf(r2);
-
-		//	// compute orthonormal coordinate frame uvw with hitpoint as origin 
-		//	Vec3f w = nl; w.normalize();
-		//	Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-		//	Vec3f v = cross(w, u);
-
-		//	// compute cosine weighted random ray direction on hemisphere 
-		//	nextdir = u*cosf(phi)*r2s + v*sinf(phi)*r2s + w*sqrtf(1 - r2);
-		//	nextdir.normalize();
-
-		//	// offset origin next path segment to prevent self intersection
-		//	hitpoint += nl * 0.001f; // scene size dependent
-
-		//	// multiply mask with colour of object
-		//	mask *= objcol;
-
-		//} // end diffuse material
-
-		// Phong metal material from "Realistic Ray Tracing", P. Shirley
-		//if (refltype == METAL){
-
-		//	// compute random perturbation of ideal reflection vector
-		//	// the higher the phong exponent, the closer the perturbed vector is to the ideal reflection direction
-		//	float phi = 2 * M_PI * curand_uniform(randstate);
-		//	float r2 = curand_uniform(randstate);
-		//	float phongexponent = 30;
-		//	float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
-		//	float sinTheta = sqrtf(1 - cosTheta * cosTheta);
-
-		//	// create orthonormal basis uvw around reflection vector with hitpoint as origin 
-		//	// w is ray direction for ideal reflection
-		//	Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
-		//	Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-		//	Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
-
-		//	// compute cosine weighted random ray direction on hemisphere 
-		//	nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
-		//	nextdir.normalize();
-
-		//	// offset origin next path segment to prevent self intersection
-		//	hitpoint += nl * 0.0001f;  // scene size dependent
-
-		//	// multiply mask with colour of object
-		//	mask *= objcol;
-		//}
-
-		// ideal specular reflection (mirror) 
-		//if (hitMaterial == 2){
-
-		//	// compute relfected ray direction according to Snell's law
-		//	nextdir = raydir - n * dot(n, raydir) * 2.0f;
-		//	nextdir.normalize();
-
-		//	// offset origin next path segment to prevent self intersection
-		//	hitpoint += nl * 0.001f;
-
-		//	// multiply mask with colour of object
-		//	mask *= objcol;
-		//}
-
 
 		// COAT material based on https://github.com/peterkutz/GPUPathTracer
 		// randomly select diffuse or specular reflection
 		// looks okay-ish but inaccurate (no Fresnel calculation yet)
 		{
-
 			float rouletteRandomFloat = curand_uniform(randstate);
-			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z)
+			float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
+			float ddn = -dot(raydir, nl);
+			float reflect = powf(1.0f - ddn, nt);
+			
+			if (material.m_SpecColorReflect.x + material.m_SpecColorReflect.y + material.m_SpecColorReflect.z && reflect > rouletteRandomFloat)
 			{
-				
-				float nt = 3.0f - material.m_ior * 0.3f;  // Index of Refraction glass/water
-				float ddn = -dot(raydir, nl);
-		        
-				float reflect = powf(1.0f - ddn, nt);
-		        if (reflect > rouletteRandomFloat) // total internal reflection 
-		        {
-					if (lastmaterialisdiffuse) break;
-					nextdir = raydir - n * 2.0f * dot(n, raydir);
-					nextdir.normalize();
-					float phi = 2 * M_PI * curand_uniform(randstate);
-					float r2 = curand_uniform(randstate);
-					float phongexponent = material.m_glossiness;
-					float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
-					float sinTheta = sqrtf(1 - cosTheta * cosTheta);
-
-					// create orthonormal basis uvw around reflection vector with hitpoint as origin 
-					// w is ray direction for ideal reflection
-					Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
-					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-					Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
-
-					// compute cosine weighted random ray direction on hemisphere 
-					nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
-					nextdir.normalize();
-
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.0001f;  // scene size dependent
-
-					// multiply mask with colour of object
-					mask *= material.m_SpecColorReflect;
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.001f; // scene size dependent
-
-					lastmaterialisdiffuse = false;
-				}
-				else
+				// specular path
+				if (lastmaterialisdiffuse) 
 				{
-					float r1 = 2 * M_PI * curand_uniform(randstate);
-					float r2 = curand_uniform(randstate);
-					float r2s = sqrtf(r2);
+					break;
+				}
+				nextdir = raydir - n * 2.0f * dot(n, raydir);
+				nextdir.normalize();
+				float phi = 2 * M_PI * curand_uniform(randstate);
+				float r2 = curand_uniform(randstate);
+				float phongexponent = material.m_glossiness;
+				float cosTheta = powf(1 - r2, 1.0f / (phongexponent + 1));
+				float sinTheta = sqrtf(1 - cosTheta * cosTheta);
 
-					// compute orthonormal coordinate frame uvw with hitpoint as origin 
-					Vec3f w = nl; w.normalize();
-					Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
-					Vec3f v = cross(w, u);
+				// create orthonormal basis uvw around reflection vector with hitpoint as origin 
+				// w is ray direction for ideal reflection
+				Vec3f w = raydir - n * 2.0f * dot(n, raydir); w.normalize();
+				Vec3f u = cross((fabs(w.x) > .1 ? Vec3f(0, 1, 0) : Vec3f(1, 0, 0)), w); u.normalize();
+				Vec3f v = cross(w, u); // v is already normalised because w and u are normalised
 
-					// compute cosine weighted random ray direction on hemisphere 
-					nextdir = u*cosf(r1)*r2s + v*sinf(r1)*r2s + w*sqrtf(1 - r2);
-					nextdir.normalize();
+				// compute cosine weighted random ray direction on hemisphere 
+				nextdir = u * cosf(phi) * sinTheta + v * sinf(phi) * sinTheta + w * cosTheta;
+				nextdir.normalize();
 
-					// offset origin next path segment to prevent self intersection
-					hitpoint += nl * 0.001f;  // // scene size dependent
+				// offset origin next path segment to prevent self intersection
+				hitpoint += nl * 0.0001f;  // scene size dependent
 
-					// multiply mask with colour of object
-					mask *= material.m_ColorReflect;
+				// multiply mask with colour of object
+				mask *= material.m_SpecColorReflect;
+				// offset origin next path segment to prevent self intersection
+				hitpoint += nl * 0.001f; // scene size dependent
 
-					lastmaterialisdiffuse = true;
+				lastmaterialisdiffuse = false;
+
+				if (bounces == 0)
+				{
+					gpudata->AOVspecular[pixel_index] += mask;
+					firstbouncespecularcolor = true;
+					directillumination = mask;
+					GetRidofZero(directillumination);
 				}
 			}
 			else
 			{
+				// diffuse path
 				float r1 = 2 * M_PI * curand_uniform(randstate);
 				float r2 = curand_uniform(randstate);
 				float r2s = sqrtf(r2);
@@ -1014,12 +914,25 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 				hitpoint += nl * 0.001f;  // // scene size dependent
 
 				// multiply mask with colour of object
-				mask *= material.m_ColorReflect;
-
+				if (material.m_textureIndex == -1)
+				{
+					mask *= material.m_ColorReflect;
+				}
+				else
+				{
+					Vec3f t = GetTexColor(gpudata, bestTriIdx, &material, &bary);
+					mask *= material.m_ColorReflect * t;
+				}
+					
 				lastmaterialisdiffuse = true;
+				if (bounces == 0)
+				{
+					gpudata->AOVdirectdiffuse[pixel_index] += mask;
+					gpudata->AOVdiffusecount[pixel_index] += 1;
+					directillumination = mask;
+					GetRidofZero(directillumination);
+				}
 			}
-
-			
 		} // end COAT
 
 		// perfectly refractive material (glass, water)
@@ -1081,22 +994,30 @@ __device__ Vec3f renderKernel(curandState* randstate, const float4* HDRmap, Vec3
 		raydir = nextdir; 
 	} // end bounces for loop
 
+	if (!firstbouncespecularcolor)
+	{
+		gpudata->AOVindirectdiffuse[pixel_index] += accucolor / directillumination;
+	}
+	else
+	{
+		gpudata->AOVindirectspecular[pixel_index] += accucolor / directillumination;
+	}
+
 	return accucolor;
 }
 
-__global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float *materialbuffer, const float4* HDRmap, const float4* gpuNodes, const float4* gpuTriWoops, 
-	const float4* gpuDebugTris, const int* gpuTriIndices, const MaterialCUDA* mats, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
-	unsigned int tricount, const Camera* cudaRendercam) 
+__global__ void PathTracingKernel(Vec3f* output, gpuData *gpudata, const float4* HDRmap, unsigned int framenumber, unsigned int hashedframenumber, unsigned int leafcount, 
+	unsigned int tricount) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	if(x >= cudaRendercam->resolution.x)return;
-	if(y >= cudaRendercam->resolution.y)return;
-	float depth;
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
 	Vec3f normal = Vec3f(0, 0, 0);
 	float materialID;
-	float eyecosdepth;
 
 	// global threadId, see richiesams blogspot
 	int threadId = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
@@ -1110,14 +1031,14 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 	Vec3f finalcol; // final pixel colour 
 	finalcol = Vec3f(0.0f, 0.0f, 0.0f); // reset colour to zero for every pixel	
 	//Vec3f rendercampos = Vec3f(0, 0.2, 4.6f); 
-	Vec3f rendercampos = Vec3f(cudaRendercam->position.x, cudaRendercam->position.y, cudaRendercam->position.z);
+	Vec3f rendercampos = Vec3f(gpudata->cudaRendercam->position.x, gpudata->cudaRendercam->position.y, gpudata->cudaRendercam->position.z);
 
-	int i = (cudaRendercam->resolution.y - y - 1) * cudaRendercam->resolution.x + x; // pixel index in buffer	
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x; // pixel index in buffer	
 	int pixelx = x; // pixel x-coordinate on screen
-	int pixely = cudaRendercam->resolution.y - y - 1; // pixel y-coordintate on screen
+	int pixely = gpudata->cudaRendercam->resolution.y - y - 1; // pixel y-coordintate on screen
 
 	Vec3f camdir = Vec3f(0, -0.042612, -1); camdir.normalize();
-	Vec3f cx = Vec3f(cudaRendercam->resolution.x * .5135f / cudaRendercam->resolution.y, 0.0f, 0.0f);  // ray direction offset along X-axis 
+	Vec3f cx = Vec3f(gpudata->cudaRendercam->resolution.x * .5135f / gpudata->cudaRendercam->resolution.y, 0.0f, 0.0f);  // ray direction offset along X-axis 
 	Vec3f cy = (cross(cx, camdir)).normalize() * .5135f; // ray dir offset along Y-axis, .5135 is FOV angle
 
 
@@ -1125,14 +1046,14 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 
 		// compute primary ray direction
 		// use camera view of current frame (transformed on CPU side) to create local orthonormal basis
-		Vec3f rendercamview = Vec3f(cudaRendercam->view.x, cudaRendercam->view.y, cudaRendercam->view.z); rendercamview.normalize(); // view is already supposed to be normalized, but normalize it explicitly just in case.
-		Vec3f rendercamup = Vec3f(cudaRendercam->up.x, cudaRendercam->up.y, cudaRendercam->up.z); rendercamup.normalize();
+		Vec3f rendercamview = Vec3f(gpudata->cudaRendercam->view.x, gpudata->cudaRendercam->view.y, gpudata->cudaRendercam->view.z); rendercamview.normalize(); // view is already supposed to be normalized, but normalize it explicitly just in case.
+		Vec3f rendercamup = Vec3f(gpudata->cudaRendercam->up.x, gpudata->cudaRendercam->up.y, gpudata->cudaRendercam->up.z); rendercamup.normalize();
 		Vec3f horizontalAxis = cross(rendercamview, rendercamup); horizontalAxis.normalize(); // Important to normalize!
 		Vec3f verticalAxis = cross(horizontalAxis, rendercamview); verticalAxis.normalize(); // verticalAxis is normalized by default, but normalize it explicitly just for good measure.
 
 		Vec3f middle = rendercampos + rendercamview; 
-		Vec3f horizontal = horizontalAxis * tanf(cudaRendercam->fov.x * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
-		Vec3f vertical = verticalAxis * tanf(-cudaRendercam->fov.y * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
+		Vec3f horizontal = horizontalAxis * tanf(gpudata->cudaRendercam->fov.x * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
+		Vec3f vertical = verticalAxis * tanf(-gpudata->cudaRendercam->fov.y * 0.5 * (M_PI / 180)); // Treating FOV as the full FOV, not half, so multiplied by 0.5
 
 		// anti-aliasing
 		// calculate center of current pixel and add random number in X and Y dimension
@@ -1140,19 +1061,19 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 		
 		 float jitterValueX = curand_uniform(&randState) - 0.5;
 		 float jitterValueY = curand_uniform(&randState) - 0.5;
-		 float sx = (jitterValueX + pixelx) / (cudaRendercam->resolution.x - 1);
-		 float sy = (jitterValueY + pixely) / (cudaRendercam->resolution.y - 1);
+		 float sx = (jitterValueX + pixelx) / (gpudata->cudaRendercam->resolution.x - 1);
+		 float sy = (jitterValueY + pixely) / (gpudata->cudaRendercam->resolution.y - 1);
 
 		// compute pixel on screen
 		Vec3f pointOnPlaneOneUnitAwayFromEye = middle + (horizontal * ((2 * sx) - 1)) + (vertical * ((2 * sy) - 1));
-		Vec3f pointOnImagePlane = rendercampos + ((pointOnPlaneOneUnitAwayFromEye - rendercampos) * cudaRendercam->focalDistance); // Important for depth of field!		
+		Vec3f pointOnImagePlane = rendercampos + ((pointOnPlaneOneUnitAwayFromEye - rendercampos) * gpudata->cudaRendercam->focalDistance); // Important for depth of field!		
 																											
 		// calculation of depth of field / camera aperture 
 		// based on https://github.com/peterkutz/GPUPathTracer 
 
 		Vec3f aperturePoint = Vec3f(0, 0, 0);
 
-		if (cudaRendercam->apertureRadius > 0.00001) { // the small number is an epsilon value.
+		if (gpudata->cudaRendercam->apertureRadius > 0.00001) { // the small number is an epsilon value.
 
 			// generate random numbers for sampling a point on the aperture
 			float random1 = curand_uniform(&randState);
@@ -1160,7 +1081,7 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 
 			// randomly pick a point on the circular aperture
 			float angle = TWO_PI * random1;
-			float distance = cudaRendercam->apertureRadius * sqrtf(random2);
+			float distance = gpudata->cudaRendercam->apertureRadius * sqrtf(random2);
 			float apertureX = cos(angle) * distance;
 			float apertureY = sin(angle) * distance;
 
@@ -1181,89 +1102,214 @@ __global__ void PathTracingKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* norm
 		// ray origin
 		Vec3f originInWorldSpace = aperturePoint;
 
-		finalcol += renderKernel(&randState, HDRmap, &normal, &depth, &eyecosdepth, &materialID, gpuNodes, gpuTriWoops, gpuDebugTris, gpuTriIndices, mats,
-				originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
+		finalcol += renderKernel(i, &randState, HDRmap, &normal, &materialID, gpudata, 
+			originInWorldSpace, rayInWorldSpace, leafcount, tricount) * (1.0f/samps);
 	}
 
 	// add pixel colour to accumulation buffer (accumulates all samples) 
-	accumbuffer[i] += finalcol;
+	gpudata->accumulatebuffer[i] += finalcol;
 
 	// get depth and normal
-	//depthbuffer[i] = depth;
-	depthbuffer[i] = depthbuffer[i] * (framenumber - 1) / framenumber + depth / framenumber;
-	normalbuf[i] = normalbuf[i] * (framenumber - 1) / framenumber + normal / framenumber;
-	eyecosdepthbuffer[i] = eyecosdepthbuffer[i] * (framenumber - 1) / framenumber + eyecosdepth / framenumber;
-	materialbuffer[i] = materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;;
+	gpudata->normalbuffer[i] = gpudata->normalbuffer[i] * (framenumber - 1) / framenumber + normal / framenumber;
+	gpudata->materialbuffer[i] = gpudata->materialbuffer[i] * (framenumber - 1) / framenumber + materialID / framenumber;
 }
 
-__global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const Camera* cudaRenderCam, unsigned int framenumber, int winSize, float pos_var, float col_var, float dep_var) 
+__global__ void newFilterKernel(Vec3f* output, gpuData *gpudata, unsigned int framenumber, int winSize, float pos_var, float col_var) 
 {
 	// assign a CUDA thread to every pixel by using the threadIndex
 	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-	if(x >= cudaRenderCam->resolution.x)return;
-	if(y >= cudaRenderCam->resolution.y)return;
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
-	int i = (cudaRenderCam->resolution.y - y - 1) * cudaRenderCam->resolution.x + x;
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
 	Vec3f ret_colour = Vec3f(0.0f, 0.0f, 0.0f);
-	//if (x > cudaRenderCam->resolution.x / 2)
-	if (framenumber < 200)
+	Vec3f indirectdiffuse(0, 0, 0);
+	Vec3f indirectspecular(0, 0, 0);
+	float weight_total_diffuse = 0, weight_total_specular = 0;
+	int index;
+	float weight;
+	int filter_window = winSize;
+	// diffuse filter
+	for (int m = -filter_window; m <= filter_window; m++)
 	{
-		ret_colour = accumbuffer[i];
-	}
-	else
-	{
-		float weight_total = 0;
-		int index;
-		float weight;
-		int filter_window = winSize;
-		float pos_variance = pos_var;
-		float col_variance = col_var;
-		float dep_variance = dep_var;
-		for (int m = -filter_window; m <= filter_window; m++)
+		for (int n = -filter_window; n <= filter_window; n++)
 		{
-			for (int n = -filter_window; n <= filter_window; n++)
-			{
-				int index_y = cudaRenderCam->resolution.y - y - n - 1;
-				int index_x = m + x;
-				if ((index_x < 0 || index_x >= cudaRenderCam->resolution.x || index_y < 0 || index_y >= cudaRenderCam->resolution.y))
-					continue;
-				index = index_y * cudaRenderCam->resolution.x + index_x;
-				weight = /*((abs(eyecosdepthbuffer[i] - eyecosdepthbuffer[index]) < 0.001f) ? 1.0f : 
-					exp(-(depthbuffer[i] - depthbuffer[index]) * (depthbuffer[i] - depthbuffer[index]) / (2.0f * dep_variance))) **/	
-					max(0.001f, dot(normalbuf[i], normalbuf[index])) *					
-					(abs(materialbuffer[i] - materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
-					exp(-(m*m + n*n) / (2.0f * pos_variance)) *								
-					exp(-(accumbuffer[i] - accumbuffer[index]).lengthsq() / (2.0f * col_variance));												
+			int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+			int index_x = m + x;
+			if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+				continue;
+			index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
 
-				weight_total += weight;
-				ret_colour += accumbuffer[index] * weight;
-			}
+			weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+				(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+				exp(-(m*m + n*n) / (2.0f * pos_var)) *							
+				exp(-(gpudata->AOVindirectdiffuse[i] - gpudata->AOVindirectdiffuse[index]).lengthsq() / (2.0f * col_var));												
+
+			weight_total_diffuse += weight;
+			indirectdiffuse += gpudata->AOVindirectdiffuse[index] * weight;
 		}
-		ret_colour /= weight_total;
-		//ret_colour = Vec3f(float(materialbuffer[i] % 10) / 10.0f, 0, 0) * framenumber;
 	}
-	// averaged colour: divide colour by the number of calculated frames so far
-	//accumbuffer[i] = ret_colour;
-	Vec3f tempcol = ret_colour / framenumber;
+	indirectdiffuse /= weight_total_diffuse;
+		
+	// specular filter
+	filter_window = int(filter_window * 0.7);
+	//float sq_glossiness = gpudata->cudaMaterialsPtr[int(gpudata->materialbuffer[i])].m_glossiness;
+	if (filter_window == 0) filter_window = 1;
+	for (int m = -filter_window; m <= filter_window; m++)
+	{
+		for (int n = -filter_window; n <= filter_window; n++)
+		{
+			int index_y = gpudata->cudaRendercam->resolution.y - y - n - 1;
+			int index_x = m + x;
+			if ((index_x < 0 || index_x >= gpudata->cudaRendercam->resolution.x || index_y < 0 || index_y >= gpudata->cudaRendercam->resolution.y))
+				continue;
+			index = index_y * gpudata->cudaRendercam->resolution.x + index_x;
 
-	tempcol *= 8.0f;
+			weight = max(0.001f, dot(gpudata->normalbuffer[i], gpudata->normalbuffer[index])) *					
+				(abs(gpudata->materialbuffer[i] - gpudata->materialbuffer[index]) < 0.01f ? 1.0f : 0.01f) *		
+				exp(-(m*m + n*n) / (2.0f * pos_var)) *								
+				exp(-(gpudata->AOVindirectspecular[i] - gpudata->AOVindirectspecular[index]).lengthsq() / (col_var));												
 
-	tempcol.x = tempcol.x / (tempcol.x + 1.0f); 
-	tempcol.y = tempcol.y / (tempcol.y + 1.0f); 
-	tempcol.z = tempcol.z / (tempcol.z + 1.0f); 
+			weight_total_specular += weight;
+			indirectspecular += gpudata->AOVindirectspecular[index] * weight;
+		}
+	}
+	indirectspecular /= weight_total_specular;
 
-	Colour fcolour;
-	Vec3f colour = tempcol;
-	
+	float diffseweight = (gpudata->AOVdiffusecount[i] == 0) ? 0 : 1.0f / gpudata->AOVdiffusecount[i];
+	float specularweight = ((framenumber - gpudata->AOVdiffusecount[i]) == 0) ? 0 : 1.0f / (framenumber - gpudata->AOVdiffusecount[i]);
+	ret_colour = gpudata->AOVdirectdiffuse[i] * indirectdiffuse * diffseweight + gpudata->AOVspecular[i] * indirectspecular * specularweight;
+
+	// simple linear interpolation
+	if (framenumber < 210)
+		gpudata->accumulatebuffer[i] += (ret_colour - gpudata->accumulatebuffer[i]) / (210 - framenumber);
+	else
+		gpudata->accumulatebuffer[i] = ret_colour;
+}
+
+__device__ void temperature_to_color(float color_temperature, Vec3f& result)
+{
+	const float epsilon = 0.0001f;
+	float r, g, b;
+    float temperature = color_temperature / 100.0f;
+    if (temperature <= 65.0f)
+	{
+        r = 1.0f;
+        g = temperature;
+        g = 99.4708025861f * logf(g) - 161.1195681661f;
+        g = g / 255.0f;
+        if (g < 0.0f)
+            g = 0.0f;
+		else if (g > 1.0f)
+            g = 1.0f;
+        if (temperature <= 19.0f)
+            b = 0.0f;
+        else
+		{
+            b = temperature - 10.0f;
+            b = 138.5177312231f * logf(b) - 305.0447927307f;
+            b = b / 255.0f;
+            if (b < 0.0f)
+                b = 0.0f;
+            else if (b > 1.0f)
+                b = 1.0f;
+		}
+	}
+    else
+	{
+        r = temperature - 60.0f;
+        r = 329.698727446f * powf(r, -0.1332047592f) / 255.0f;
+        if (r < 0.0f)
+            r = 0.0f;
+		else if (r > 1.0f)
+            r = 1.0f;
+        g = temperature - 60.0f;
+        g = 288.1221695283f * powf(g, -0.0755148492f) / 255.0f;
+        if (g < 0.0f)
+            g = 0.0f;
+		else if (g > 1.0f)
+            g = 1.0f;
+        b = 1.0f;
+	}
+	result.x = r, result.y = g, result.z = b;
+	if (result.x <= 0.0f) result.x = epsilon;
+	if (result.y <= 0.0f) result.y = epsilon;
+	if (result.z <= 0.0f) result.z = epsilon;
+}
+
+__device__ void exposure(Vec3f& colorResult, float col_sat, float exp_val, float whitepoint, float shadows, float midtones, float highlights)
+{
+	const Vec3f luminance_weight(0.212671f, 0.715160f, 0.072169f);
+
+	// whitepoint
+	Vec3f nwp(1.0f, 1.0f, 1.0f);
+	temperature_to_color(whitepoint, nwp);
+	if (nwp.x > 0.0f) { nwp.x = 1.0f / nwp.x; } else { nwp.x = 1.0f; }
+    if (nwp.y > 0.0f) { nwp.y = 1.0f / nwp.y; } else { nwp.y = 1.0f; }
+	if (nwp.z > 0.0f) { nwp.z = 1.0f / nwp.z; } else { nwp.z = 1.0f; }
+    const float temp2 = luminance_weight.x * nwp.x + luminance_weight.y * nwp.y + luminance_weight.z * nwp.z;
+    nwp /= temp2;
+
+	/* precompute data_m */
+	const float f_number = 8.0f;
+	const float film_iso = 100.0f;
+	const float t = (f_number * f_number) / powf(2.0f, exp_val);
+    const float data_m = ((18.0f / 106.0f) * (film_iso * t) / (15.4f * f_number * f_number));
+	colorResult *= (nwp * data_m);
+
+	/* precompute data_crunch */
+	const float data_crunch = shadows * 2.0f + 1.0f;
+
+	/* precompute data_g */
+	const float data_g = 1.0f / midtones;
+
+	colorResult = colorResult * (Vec3f(1.0f, 1.0f, 1.0f) + (colorResult * highlights)) / (Vec3f(1.0f, 1.0f, 1.0f) + colorResult);
+
+	// color saturation
+	float oms = 1.0f - col_sat;
+	float lum = luminance_weight.x * colorResult.x + luminance_weight.y * colorResult.y + luminance_weight.z * colorResult.z;
+    colorResult = colorResult * col_sat + lum * oms;
+	if (colorResult.x < 0) colorResult.x = 0;
+	if (colorResult.y < 0) colorResult.y = 0;
+	if (colorResult.z < 0) colorResult.z = 0;
+	if (colorResult.x > 1) colorResult.x = 1;
+	if (colorResult.y > 1) colorResult.y = 1;
+	if (colorResult.z > 1) colorResult.z = 1;
+
+	const float intens = powf((luminance_weight.x * colorResult.x + luminance_weight.y * colorResult.y + luminance_weight.z * colorResult.z), 0.5f);
+    oms = 1.0f - intens;
+    if (intens < 1.0f) 
+	{
+		colorResult = colorResult * intens + powf(colorResult, Vec3f(data_crunch, data_crunch, data_crunch)) * oms;
+    }
+
+	colorResult = powf(colorResult, Vec3f(data_g, data_g, data_g));
+}
+
+__global__ void proProcessing(Vec3f* output, gpuData *gpudata, int effectiveFrame, float col_sat, float exp_val, float whitepoint, float shadows, float midtones, float highlights)
+{
+	// assign a CUDA thread to every pixel by using the threadIndex
+	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	if(x >= gpudata->cudaRendercam->resolution.x || y >= gpudata->cudaRendercam->resolution.y) 
+		return; 
+
+	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
+	int i = (gpudata->cudaRendercam->resolution.y - y - 1) * gpudata->cudaRendercam->resolution.x + x;
+
+	Vec3f originResult = gpudata->accumulatebuffer[i] / effectiveFrame;
+
+	exposure(originResult, col_sat, exp_val, whitepoint, shadows, midtones, highlights);
+
+	Colour fcolour;	
 	// convert from 96-bit to 24-bit colour + perform gamma correction
-	fcolour.components = make_uchar4((unsigned char)(powf(colour.x, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.y, 1 / 2.2f) * 255), 
-										(unsigned char)(powf(colour.z, 1 / 2.2f) * 255), 1);
-
-		//fcolour.components = make_uchar4((unsigned char)(colour.x* 255), 
-		//								(unsigned char)(colour.y* 255), 
-		//								(unsigned char)(colour.z* 255), 1);
+	fcolour.components = make_uchar4((unsigned char)(powf(originResult.x, 1 / 2.2f) * 255), 
+									 (unsigned char)(powf(originResult.y, 1 / 2.2f) * 255), 
+									 (unsigned char)(powf(originResult.z, 1 / 2.2f) * 255), 1);
 	
 	// store pixel coordinates and pixelcolour in OpenGL readable outputbuffer
 	output[i] = Vec3f(x, y, fcolour.c);
@@ -1272,44 +1318,48 @@ __global__ void FilterKernel(Vec3f* output, Vec3f* accumbuffer, Vec3f* normalbuf
 bool firstTime = true;
 
 // the gateway to CUDA, called from C++ (in void disp() in main.cpp)
-void cudaRender(const float4* nodes, const float4* triWoops, const float4* debugTris, const int* triInds, const MaterialCUDA* mats,
-	Vec3f* outputbuf, Vec3f* accumbuf, Vec3f* normalbuf, float* depthbuffer, float* eyecosdepthbuffer, float* materialbuffer, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
-	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, const Camera* cudaRenderCam, int w, int h, int winSize, float pos_var, float col_var, float dep_var){
+void cudaRender(gpuData *hostdata, gpuData *gpudata, Vec3f* outputbuf, const float4* HDRmap, const unsigned int framenumber, const unsigned int hashedframenumber, 
+	const unsigned int nodeSize, const unsigned int leafnodecnt, const unsigned int tricnt, int w, int h, controlParam *cp, enviParam *en){
 
 	if (firstTime) {
 		// if this is the first time cudarender() is called,
 		// bind the scene data to CUDA textures!
 		firstTime = false;
-		
-		cudaChannelFormatDesc channel0desc = cudaCreateChannelDesc<int>();
-		cudaBindTexture(NULL, &triIndicesTexture, triInds, &channel0desc, (tricnt * 3 + leafnodecnt) * sizeof(int));  // is tricnt wel juist??
 
-		//cudaChannelFormatDesc channel1desc = cudaCreateChannelDesc<float4>();
-		//cudaBindTexture(NULL, &triWoopTexture, triWoops, &channel1desc, (tricnt * 3 + leafnodecnt) * sizeof(float4));
-
-		cudaChannelFormatDesc channel3desc = cudaCreateChannelDesc<float4>();
-		cudaBindTexture(NULL, &bvhNodesTexture, nodes, &channel3desc, nodeSize * 5 * sizeof(float4));  /// 5 is niet goed
-
-		HDRtexture.filterMode = cudaFilterModeLinear;
+		// Set HDR texture reference parameters    
+		HDRtexture.addressMode[0] = cudaAddressModeWrap;    
+		HDRtexture.addressMode[1] = cudaAddressModeWrap;    
+		HDRtexture.filterMode     = cudaFilterModeLinear;    
+		HDRtexture.normalized     = true;
 
 		cudaChannelFormatDesc channel4desc = cudaCreateChannelDesc<float4>(); 
-		cudaBindTexture(NULL, &HDRtexture, HDRmap, &channel4desc, HDRwidth * HDRheight * sizeof(float4));  // 2k map:
 
-		printf("CudaWoopTriangles texture initialised, tri count: %d\n", tricnt);
+		cudaArray* cuArray;    
+		cudaMallocArray(&cuArray, &channel4desc, en->HDRwidth, en->HDRheight);
+
+		cudaMemcpyToArray(cuArray, 0, 0, HDRmap, en->HDRwidth * en->HDRheight * sizeof(float4), cudaMemcpyHostToDevice);
+		
+		cudaBindTextureToArray(&HDRtexture, cuArray, &channel4desc);
 	}
 
 	dim3 block(16, 16, 1);   // dim3 CUDA specific syntax, block and grid are required to schedule CUDA threads over streaming multiprocessors
-	dim3 grid((w + 15) / block.x, (h + 15) / block.y, 1);
+	dim3 grid((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
 
 	// Configure grid and block sizes:
 	int threadsPerBlock = 256;
 	// Compute the number of blocks required, performing a ceiling operation to make sure there are enough:
-	int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
-	// <<<fullBlocksPerGrid, threadsPerBlock>>>
-
-	PathTracingKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, HDRmap, nodes, triWoops, debugTris, 
-		triInds, mats, framenumber, hashedframenumber, leafnodecnt, tricnt, cudaRenderCam);  // texdata, texoffsets
+	//int fullBlocksPerGrid = ((w * h) + threadsPerBlock - 1) / threadsPerBlock;
+	
+	if (framenumber <= 200)
+	{
+		PathTracingKernel <<< grid, block >>> (outputbuf, gpudata, HDRmap, framenumber, hashedframenumber, leafnodecnt, tricnt);  // texdata, texoffsets
+	}
+	else if (framenumber > 200 && framenumber <= 210)
+	{
+		newFilterKernel <<< grid, block >>> (outputbuf, gpudata, framenumber, cp->m_windowSize, cp->m_variance_pos, cp->m_variance_col);
+	}
 
 	cudaThreadSynchronize();
-	FilterKernel <<<grid, block >>> (outputbuf, accumbuf, normalbuf, depthbuffer, eyecosdepthbuffer, materialbuffer, cudaRenderCam, framenumber, winSize, pos_var, col_var, dep_var);
+	proProcessing <<< grid, block >>> (outputbuf, gpudata, min(framenumber, 200), cp->m_color_saturation, cp->m_exposure_value, cp->m_whitepoint, 
+		cp->m_shadows, cp->m_midtones, cp->m_highlights);
 }

@@ -1,45 +1,6 @@
-/*
-*  Copyright (c) 2009-2011, NVIDIA Corporation
-*  All rights reserved.
-*
-*  Redistribution and use in source and binary forms, with or without
-*  modification, are permitted provided that the following conditions are met:
-*      * Redistributions of source code must retain the above copyright
-*        notice, this list of conditions and the following disclaimer.
-*      * Redistributions in binary form must reproduce the above copyright
-*        notice, this list of conditions and the following disclaimer in the
-*        documentation and/or other materials provided with the distribution.
-*      * Neither the name of NVIDIA Corporation nor the
-*        names of its contributors may be used to endorse or promote products
-*        derived from this software without specific prior written permission.
-*
-*  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-*  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-*  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-*  DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-*  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-*  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-*  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-*  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-*  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-*  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
 #include "CudaBVH.h"
 #include "SceneLoader.h"  // required for triangles and vertices
 
-//Nodes / BVHLayout_Compact  (12 floats + 4 ints = 64 bytes)
-// innernode contains two childnodes c0 and c1, each having x,y,z coords for AABBhi and AABBlo, 2*2*3 = 12 floats 
-//      
-//		nodes[innerOfs + 0 ] = Vec4f(c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)  // 4 floats = 16 bytes
-//      nodes[innerOfs + 16] = Vec4f(c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)  // increment nodes array index with 16
-//      nodes[innerOfs + 32] = Vec4f(c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-//      nodes[innerOfs + 48] = Vec4i(c0.innerOfs or ~c0.triOfs, c1.innerOfs or ~c1.triOfs, 0, 0)  // either inner or leaf, two dummy zeros at the end
-//		CudaBVH Compact: Vec4f(c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y)
-//		CudaBVH Compact: Vec4f(c1.lo.x, c1.hi.x, c1.lo.y, c1.hi.y)
-//		CudaBVH Compact: Vec4f(c0.lo.z, c0.hi.z, c1.lo.z, c1.hi.z)
-//		CudaBVH Compact: Vec4f(c0.innerOfs or ~c0.triOfs, c1.innerOfs or ~c1.triOfs, 0, 0)
-//		BVH node bounds: c0.lo.x, c0.hi.x, c0.lo.y, c0.hi.y, c0.lo.z, c0.hi.z
 
 static int woopcount = 0;  // counts Woopified triangles
 
@@ -47,6 +8,11 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 	: m_layout(layout)
 {
 	FW_ASSERT(layout >= 0 && layout < BVHLayout_Max);
+	m_gpuNodes = NULL;
+	m_gpuTriNormal = NULL;
+	m_debugTri = NULL;
+	m_UVTri = NULL;
+	m_gpuTriIndices = NULL;
 
 	if (layout == BVHLayout_Compact)
 	{
@@ -63,44 +29,11 @@ CudaBVH::CudaBVH(const BVH& bvh, BVHLayout layout)
 
 CudaBVH::~CudaBVH(void)
 {
-}
-
-//------------------------------------------------------------------------
-
-Vec2i CudaBVH::getNodeSubArray(int idx) const
-{
-	FW_ASSERT(idx >= 0 && idx < 4);
-	S32 size = (S32)m_nodes.getSize();
-
-	if (m_layout == BVHLayout_SOA_AOS || m_layout == BVHLayout_SOA_SOA)
-		return Vec2i((size >> 2) * idx, (size >> 2));
-	return Vec2i(0, size);
-}
-
-//------------------------------------------------------------------------
-
-Vec2i CudaBVH::getTriWoopSubArray(int idx) const
-{
-	FW_ASSERT(idx >= 0 && idx < 4);
-	S32 size = (S32)m_triWoop.getSize();
-
-	if (m_layout == BVHLayout_AOS_SOA || m_layout == BVHLayout_SOA_SOA)
-		return Vec2i((size >> 2) * idx, (size >> 2));
-	return Vec2i(0, size);
-}
-
-//------------------------------------------------------------------------
-
-CudaBVH& CudaBVH::operator=(CudaBVH& other)  
-{
-	if (&other != this)
-	{
-		m_layout = other.m_layout;
-		m_nodes = other.m_nodes;
-		m_triWoop = other.m_triWoop;
-		m_triIndex = other.m_triIndex;
-	}
-	return *this;
+	free(m_gpuNodes);
+    free(m_gpuTriNormal);
+    free(m_debugTri);
+    free(m_UVTri);
+    free(m_gpuTriIndices);
 }
 
 namespace detail
@@ -123,8 +56,9 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 	// construct and initialize data arrays which will be copied to CudaBVH buffers (last part of this function). 
 
 	Array<Vec4i> nodeData(NULL, 4); 
-	Array<Vec4i> triWoopData;
+	Array<Vec4i> triNormalData;
 	Array<Vec4i> triDebugData; // array for regular (non-woop) triangles
+	Array<Vec4f> triUVData;
 	Array<S32> triIndexData;
 
 	// construct a stack (array of stack entries) to help in filling the data arrays
@@ -161,8 +95,6 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 				continue; // process remaining childnode (if any)
 			}
 
-
-
 			//////////////////////
 			/// LEAF NODE
 			/////////////////////
@@ -172,7 +104,7 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 			const LeafNode* leaf = reinterpret_cast<const LeafNode*>(child);
 			
 			// index of a leafnode is a negative number, hence the ~
-			cidx[i] = ~triWoopData.getSize();  // leafs must be stored as negative (bitwise complement) in order to be recognised by pathtracer as a leaf
+			cidx[i] = ~triNormalData.getSize();  // leafs must be stored as negative (bitwise complement) in order to be recognised by pathtracer as a leaf
 		
 			// for each triangle in leaf, range of triangle index j from m_lo to m_hi 
 			for (int j = leaf->m_lo; j < leaf->m_hi; j++) 
@@ -183,9 +115,11 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 				if (m_woop[0].x == 0.0f) m_woop[0].x = 0.0f;  // avoid degenerate coordinates
 				// add the transformed woop triangle to triWoopData
 				
-				triWoopData.add((Vec4i*)m_normaltri, 3);  
+				triNormalData.add((Vec4i*)m_normaltri, 3);  
 				
 				triDebugData.add((Vec4i*)m_debugtri, 3);  
+				
+				triUVData.add((Vec4f*)m_uvtri, 3);  
 
 				// add tri index for current triangle to triIndexData	
 				triIndexData.add(bvh.getTriIndices()[j]); 
@@ -194,8 +128,9 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 			}
 
 			// Leaf node terminator to indicate end of leaf, stores hexadecimal value 0x80000000 (= 2147483648 in decimal)
-			triWoopData.add(0x80000000); // leafnode terminator code indicates the last triangle of the leaf node
+			triNormalData.add(0x80000000); // leafnode terminator code indicates the last triangle of the leaf node
 			triDebugData.add(0x80000000); 
+			triUVData.add(0x80000000);
 			
 			// add extra zero to triangle indices array to indicate end of leaf
 			triIndexData.add(0);  // terminates triIndexdata for current leaf
@@ -230,14 +165,14 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 		m_gpuNodes[i].w = nodeData.get(i).w; // child indices
 	}	
 
-	m_gpuTriWoop = (Vec4i*) malloc(triWoopData.getSize() * sizeof(Vec4i));
-	m_gpuTriWoopSize = triWoopData.getSize();
+	m_gpuTriNormal = (Vec4i*) malloc(triNormalData.getSize() * sizeof(Vec4i));
+	m_gpuTriNormalSize = triNormalData.getSize();
 
-	for (int i = 0; i < triWoopData.getSize(); i++){
-		m_gpuTriWoop[i].x = triWoopData.get(i).x;
-		m_gpuTriWoop[i].y = triWoopData.get(i).y;
-		m_gpuTriWoop[i].z = triWoopData.get(i).z;
-		m_gpuTriWoop[i].w = triWoopData.get(i).w;
+	for (int i = 0; i < triNormalData.getSize(); i++){
+		m_gpuTriNormal[i].x = triNormalData.get(i).x;
+		m_gpuTriNormal[i].y = triNormalData.get(i).y;
+		m_gpuTriNormal[i].z = triNormalData.get(i).z;
+		m_gpuTriNormal[i].w = triNormalData.get(i).w;
 	}
 
 	m_debugTri = (Vec4i*)malloc(triDebugData.getSize() * sizeof(Vec4i));
@@ -248,6 +183,16 @@ void CudaBVH::createCompact(const BVH& bvh, int nodeOffsetSizeDiv)
 		m_debugTri[i].y = triDebugData.get(i).y;
 		m_debugTri[i].z = triDebugData.get(i).z;
 		m_debugTri[i].w = triDebugData.get(i).w; 
+	}
+
+	m_UVTri = (Vec4f*)malloc(triDebugData.getSize() * sizeof(Vec4f));
+	m_UVTriSize = triUVData.getSize();
+
+	for (int i = 0; i < triUVData.getSize(); i++){
+		m_UVTri[i].x = triUVData.get(i).x;
+		m_UVTri[i].y = triUVData.get(i).y;
+		m_UVTri[i].z = triUVData.get(i).z;
+		m_UVTri[i].w = triUVData.get(i).w; 
 	}
 
 	m_gpuTriIndices = (S32*) malloc(triIndexData.getSize() * sizeof(S32));
@@ -267,19 +212,20 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
 	// fetch the 3 vertex indices of this triangle
 	const Vec3i& vtxInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).verticeIndex;
     const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).normalIndex;
+    const Vec3i& uvInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).uvIndex;
 	const int& matInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).materialIndex;
-    //const Vec3i& norInds = bvh.getScene()->getTriangle(bvh.getTriIndices()[triIdx]).vertices; 
-	const Vec3f& v0 = Vec3f(vertices[vtxInds._v[0]].x, vertices[vtxInds._v[0]].y, vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-	//const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
-	const Vec3f& v1 = Vec3f(vertices[vtxInds._v[1]].x, vertices[vtxInds._v[1]].y, vertices[vtxInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-	//const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
-	const Vec3f& v2 = Vec3f(vertices[vtxInds._v[2]].x, vertices[vtxInds._v[2]].y, vertices[vtxInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
-    const Vec3f& n0 = Vec3f(normals[norInds._v[0]].x, normals[norInds._v[0]].y, normals[norInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
-    //const Vec3f& v1 = bvh.getScene()->getVertex(vtxInds.y);
-    const Vec3f& n1 = Vec3f(normals[norInds._v[1]].x, normals[norInds._v[1]].y, normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
-    //const Vec3f& v2 = bvh.getScene()->getVertex(vtxInds.z);
-    const Vec3f& n2 = Vec3f(normals[norInds._v[2]].x, normals[norInds._v[2]].y, normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+	const Vec3f& v0 = Vec3f(scene_info.vertices[vtxInds._v[0]].x, scene_info.vertices[vtxInds._v[0]].y, scene_info.vertices[vtxInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+	const Vec3f& v1 = Vec3f(scene_info.vertices[vtxInds._v[1]].x, scene_info.vertices[vtxInds._v[1]].y, scene_info.vertices[vtxInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+	const Vec3f& v2 = Vec3f(scene_info.vertices[vtxInds._v[2]].x, scene_info.vertices[vtxInds._v[2]].y, scene_info.vertices[vtxInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+
+    const Vec3f& n0 = Vec3f(scene_info.normals[norInds._v[0]].x, scene_info.normals[norInds._v[0]].y, scene_info.normals[norInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+    const Vec3f& n1 = Vec3f(scene_info.normals[norInds._v[1]].x, scene_info.normals[norInds._v[1]].y, scene_info.normals[norInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+    const Vec3f& n2 = Vec3f(scene_info.normals[norInds._v[2]].x, scene_info.normals[norInds._v[2]].y, scene_info.normals[norInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
+	
+    const Vec3f& uv0 = Vec3f(scene_info.uvs[uvInds._v[0]].x, scene_info.uvs[uvInds._v[0]].y, scene_info.uvs[uvInds._v[0]].z); // vtx xyz pos voor eerste triangle vtx
+    const Vec3f& uv1 = Vec3f(scene_info.uvs[uvInds._v[1]].x, scene_info.uvs[uvInds._v[1]].y, scene_info.uvs[uvInds._v[1]].z); // vtx xyz pos voor tweede triangle vtx
+    const Vec3f& uv2 = Vec3f(scene_info.uvs[uvInds._v[2]].x, scene_info.uvs[uvInds._v[2]].y, scene_info.uvs[uvInds._v[2]].z); // vtx xyz pos voor derde triangle vtx
 
 	// regular triangles (for debugging only)
 	m_debugtri[0] = Vec4f(v0.x, v0.y, v0.z, 0.0f);
@@ -289,6 +235,10 @@ void CudaBVH::woopifyTri(const BVH& bvh, int triIdx)
     m_normaltri[0] = Vec4f(n0.x, n0.y, n0.z, 0.0f);
     m_normaltri[1] = Vec4f(n1.x, n1.y, n1.z, 0.0f);
     m_normaltri[2] = Vec4f(n2.x, n2.y, n2.z, 0.0f);
+
+	m_uvtri[0] = Vec4f(uv0.x, uv0.y, uv0.z, 0.0f);
+	m_uvtri[1] = Vec4f(uv1.x, uv1.y, uv1.z, 0.0f);
+	m_uvtri[2] = Vec4f(uv2.x, uv2.y, uv2.z, 0.0f);
 
 	m_materialIndex = matInds;
 

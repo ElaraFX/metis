@@ -28,6 +28,13 @@ SET(KIT_SRCS
   Camera.cpp
   BVHNode.cpp
   BVH.cpp
+  GReadFileToMemory.cpp
+  GReadFileToMemory.h
+  MMaterial.cpp
+  MMaterial.h
+  MTexture.cpp
+  MTexture.h
+  RenderData.h
   )
 
 link_libraries("cudart.lib")

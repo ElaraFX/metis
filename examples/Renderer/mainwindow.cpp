@@ -1,42 +1,3 @@
-/****************************************************************************
-**
-** Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
-** All rights reserved.
-**
-** Contact: Nokia Corporation (qt-info@nokia.com)
-**
-** This file is part of a Qt Solutions component.
-**
-** You may use this file under the terms of the BSD license as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of Nokia Corporation and its Subsidiary(-ies) nor
-**     the names of its contributors may be used to endorse or promote
-**     products derived from this software without specific prior written
-**     permission.
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-****************************************************************************/
-
 #include "mainwindow.h"
 #include "qtpropertymanager.h"
 #include "qteditorfactory.h"
@@ -49,6 +10,7 @@
 #include <QDockWidget>
 #include <QToolBar>
 #include <qspinbox.h>
+#include <qlabel.h>
 
 #include "CUDAWindow.h"
 
@@ -88,6 +50,7 @@ void CanvasView::contentsMouseMoveEvent(QMouseEvent* event)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+	this->setWindowTitle(QString::fromLocal8Bit("闪渲科技 - Metis渲染器 V0.1"));
     fileToolBar = addToolBar(tr("File"));
     statusBar();
     QMenu *editMenu = menuBar()->addMenu(tr("File"));
@@ -102,37 +65,37 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *newRectangleAction = new QAction(tr("Rectangle"), this);
     connect(newRectangleAction, SIGNAL(triggered(bool)), this, SLOT(newRectangle()));
     newObjectMenu->addAction(newRectangleAction);
-    fileToolBar->addAction(newRectangleAction);
+    //fileToolBar->addAction(newRectangleAction);
 
     QAction *newLineAction = new QAction(tr("Line"), this);
     connect(newLineAction, SIGNAL(triggered(bool)), this, SLOT(newLine()));
     newObjectMenu->addAction(newLineAction);
-    fileToolBar->addAction(newLineAction);
+    //fileToolBar->addAction(newLineAction);
 
     QAction *newEllipseAction = new QAction(tr("Ellipse"), this);
     connect(newEllipseAction, SIGNAL(triggered(bool)), this, SLOT(newEllipse()));
     newObjectMenu->addAction(newEllipseAction);
-    fileToolBar->addAction(newEllipseAction);
+    //fileToolBar->addAction(newEllipseAction);
 
     QAction *newTextAction = new QAction(tr("Text"), this);
     connect(newTextAction, SIGNAL(triggered(bool)), this, SLOT(newText()));
     newObjectMenu->addAction(newTextAction);
-    fileToolBar->addAction(newTextAction);
+    //fileToolBar->addAction(newTextAction);
 
     deleteAction = new QAction(tr("Delete Object"), this);
     connect(deleteAction, SIGNAL(triggered(bool)), this, SLOT(deleteObject()));
     editMenu->addAction(deleteAction);
-    fileToolBar->addAction(deleteAction);
+    //fileToolBar->addAction(deleteAction);
 
     QAction *clearAction = new QAction(tr("Clear All"), this);
     connect(clearAction, SIGNAL(triggered(bool)), this, SLOT(clearAll()));
     editMenu->addAction(clearAction);
-    fileToolBar->addAction(clearAction);
+    //fileToolBar->addAction(clearAction);
 
     QAction *fillAction = new QAction(tr("Fill View"), this);
     connect(fillAction, SIGNAL(triggered(bool)), this, SLOT(fillView()));
     editMenu->addAction(fillAction);
-    fileToolBar->addAction(fillAction);
+    //fileToolBar->addAction(fillAction);
 
     doubleManager = new QtDoublePropertyManager(this);
     stringManager = new QtStringPropertyManager(this);
@@ -171,23 +134,57 @@ MainWindow::MainWindow(QWidget *parent)
 	m_filterSizeSpin = new QSpinBox();
 	m_variancePosSpin = new QDoubleSpinBox();
 	m_varianceColSpin = new QDoubleSpinBox();
-	m_varianceDepSpin = new QDoubleSpinBox();
+	m_colorsatSpin = new QDoubleSpinBox();
+	m_exposureValSpin = new QDoubleSpinBox();
+	m_whitePointSpin = new QDoubleSpinBox();
+	m_shadowsSpin = new QDoubleSpinBox();
+	m_midtonesSpin = new QDoubleSpinBox();
+	m_highlightsSpin = new QDoubleSpinBox();
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("去噪窗口")));
 	fileToolBar->addWidget(m_filterSizeSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("位置影响因子")));
 	fileToolBar->addWidget(m_variancePosSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("颜色影响因子")));
 	fileToolBar->addWidget(m_varianceColSpin);
-	fileToolBar->addWidget(m_varianceDepSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("颜色饱和度")));
+	fileToolBar->addWidget(m_colorsatSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("曝光指数")));
+	fileToolBar->addWidget(m_exposureValSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("白平衡")));
+	fileToolBar->addWidget(m_whitePointSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("暗区亮度")));
+	fileToolBar->addWidget(m_shadowsSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("普通亮度")));
+	fileToolBar->addWidget(m_midtonesSpin);
+	fileToolBar->addWidget(new QLabel(QString::fromLocal8Bit("高光区亮度")));
+	fileToolBar->addWidget(m_highlightsSpin);
 
 	m_filterSizeSpin->setValue(15);
-	m_variancePosSpin->setRange(0, 9999999);
+	m_variancePosSpin->setRange(0, 99999);
 	m_variancePosSpin->setValue(100);
-	m_varianceColSpin->setRange(0, 9999999);
-	m_varianceColSpin->setValue(40);
-	m_varianceDepSpin->setRange(0, 9999999);
-	m_varianceDepSpin->setValue(100);
+	m_varianceColSpin->setRange(0, 99999);
+	m_varianceColSpin->setValue(200);
+	m_colorsatSpin->setRange(0, 99999);
+	m_colorsatSpin->setValue(1);
+	m_exposureValSpin->setRange(-100, 100);
+	m_exposureValSpin->setValue(0);
+	m_whitePointSpin->setRange(0, 40000);
+	m_whitePointSpin->setValue(6500);
+	m_shadowsSpin->setRange(0, 1);
+	m_shadowsSpin->setValue(0.2);
+	m_midtonesSpin->setRange(0.01, 4);
+	m_midtonesSpin->setValue(1);
+	m_highlightsSpin->setRange(0, 1);
+	m_highlightsSpin->setValue(0.2);
 	connect(m_filterSizeSpin, SIGNAL(valueChanged(int)), cudaWindow, SLOT(slotWindowSizeChanged(int)));
 	connect(m_variancePosSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancPosChanged(double)));
 	connect(m_varianceColSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancColChanged(double)));
-	connect(m_varianceDepSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotVariancDepChanged(double)));
+	connect(m_colorsatSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotColorsatChanged(double)));
+	connect(m_exposureValSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotExposureValChanged(double)));
+	connect(m_whitePointSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotWhitepointChanged(double)));
+	connect(m_shadowsSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotShadowsChanged(double)));
+	connect(m_midtonesSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotMidtonesChanged(double)));
+	connect(m_highlightsSpin, SIGNAL(valueChanged(double)), cudaWindow, SLOT(slotHighlightsChanged(double)));
 
     propertyEditor = new QtTreePropertyBrowser(dock);
     propertyEditor->setFactoryForManager(doubleManager, doubleSpinBoxFactory);

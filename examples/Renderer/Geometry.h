@@ -24,6 +24,10 @@ struct Triangle {
     unsigned n_idx1;
     unsigned n_idx2;
     unsigned n_idx3;
+	
+    unsigned uv_idx1;
+    unsigned uv_idx2;
+    unsigned uv_idx3;
 
 	unsigned m_idx;
 	Vec3f _center;
