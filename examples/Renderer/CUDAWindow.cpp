@@ -46,10 +46,10 @@ TriangleWindow::TriangleWindow(QWidget *parent)
 	cp.m_midtones = 1;
 	cp.m_highlights = 0.2;
 
-	mtlfile = "data/class3.mtl";
-    scenefile = "data/class3.obj"; 
+	mtlfile = "E:\\metis_build\\bin\\Release\\data\\teapot1.mtl";
+    scenefile = "E:\\metis_build\\bin\\Release\\data\\teapot1.obj"; 
     //HDRmapname = "data/big.hdr";
-    HDRmapname = "data/Topanga_Forest_B_3k.hdr";
+    HDRmapname = "E:\\metis_build\\bin\\Release\\data\\Topanga_Forest_B_3k.hdr";
 }
 //! [1]
 
